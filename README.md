@@ -7,7 +7,8 @@ Co-op-spel för hela familjen: en stor skärm är värd, mobilerna blir handkont
 
 - Samla trä, sten, mat och järn — själv eller med bybor som jobbar åt er
 - Bygg palissader, skyttetorn, gårdar och smedja
-- Överlev 10 nätter — i gryningen förstenas trollen
-- Natt 10 kommer **Bergakungen**
+- Överlev 20 nätter — i gryningen förstenas trollen; blodnatt var 4:e natt, stortroll natt 5/10/15
+- Natt 20 kommer **Bergakungen**
+- Utforska vildmarken: koppar, tenn (hyttan smälter brons!), silver, guld och skattkistor — vaktade av varulvar
 
-All kod, grafik och musik är original, byggd från grunden i en enda HTML-fil.
+All kod och musik är original. Grafik: CC-BY 3.0-spritekit av Yar (terräng), Seth Galbraith (byggnader) och Clint Bellanger (figurer) från opengameart.org — skivade och komponerade i eget byggverktyg.
