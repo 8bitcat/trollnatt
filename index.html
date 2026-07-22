@@ -386,6 +386,14 @@ let varldFro = 0;
 const idx = (tx,ty)=>ty*MAPW+tx;
 const inne = (tx,ty)=>tx>=0&&ty>=0&&tx<MAPW&&ty<MAPH;
 
+// ---- isometrisk projektion (2:1) ----
+// Med tile 24 px och iso-ruta 48×24 blir skärmkoordinaterna elegant:
+//   sx = x - y      sy = (x + y) / 2      (x,y i världspixlar)
+const isoSX = (x,y)=>x-y;
+const isoSY = (x,y)=>(x+y)/2;
+const isoInv = (sx,sy)=>[sx/2+sy, sy-sx/2];
+function skarmMitt(dy){ return isoInv(kamX+VIEW_W/2, kamY+(dy||90)); }
+
 // ---- delat speltillstånd (fylls på av senare delar) ----
 const SPEL = { lage:'lobby', dag:1, fas:'dag', klocka:0, natt:{}, paus:false, seger:false, segerT:0, slutT:0, startT:-1 };
 let RES = { tra:40, sten:10, mat:15, jarn:0 };
@@ -732,28 +740,33 @@ function narmastLager(x,y){
   return bast;
 }
 
-// ---- kameran ----
+// ---- kameran (i iso-skärmrummet) ----
 let kamX = 0, kamY = 0;
 function uppdKamera(dt, direkt){
-  let cx = PXW/2, cy = PXH/2, n = 0;
-  for(const h of hjaltar){ cx += h.x; cy += h.y; n++; }
-  if(n){ cx = (cx-PXW/2)/n; cy = (cy-PXH/2)/n; }
-  const mx = kl(cx-VIEW_W/2, 0, PXW-VIEW_W), my = kl(cy-VIEW_H/2, 0, PXH-VIEW_H);
+  let cx = 0, cy = 0, n = 0;
+  for(const h of hjaltar){ cx += isoSX(h.x,h.y); cy += isoSY(h.x,h.y); n++; }
+  if(n){ cx /= n; cy /= n; }
+  else { cx = isoSX(PXW/2,PXH/2); cy = isoSY(PXW/2,PXH/2); }
+  const mx = kl(cx-VIEW_W/2, -PXH, PXW-VIEW_W);
+  const my = kl(cy-VIEW_H/2, -30, (PXW+PXH)/2-VIEW_H+60);
   if(direkt){ kamX = mx; kamY = my; }
   else { kamX = mix(kamX, mx, Math.min(1, dt*3.2)); kamY = mix(kamY, my, Math.min(1, dt*3.2)); }
-  // koppel: ingen hjälte får hamna utanför bild
+  // koppel: ingen hjälte får hamna utanför bild (klämning i iso-rummet)
   for(const h of hjaltar){
-    h.x = kl(h.x, kamX+20, kamX+VIEW_W-20);
-    h.y = kl(h.y, kamY+20, kamY+VIEW_H-20);
+    const sx = isoSX(h.x,h.y), sy = isoSY(h.x,h.y);
+    const nsx = kl(sx, kamX+26, kamX+VIEW_W-26), nsy = kl(sy, kamY+40, kamY+VIEW_H-18);
+    if(nsx!==sx || nsy!==sy){ const w = isoInv(nsx,nsy); h.x = w[0]; h.y = w[1]; }
   }
 }
 let miniSmutsig = true;
 </script>
 <script>
 'use strict';
-/* ===================== GRAFIK =====================
-   Allt ritas proceduralt: vikingaby med torvtak, tallskog,
-   vättar och troll. Djupsortering på fot-y. */
+/* ===================== GRAFIK: ISOMETRISK 16-BIT =====================
+   Världen ritas i klassisk 2:1-isometri. Mark, natur och byggnader
+   förrenderas som sprites i ett "spritbageri" vid uppstart — konturer,
+   tvåtonsskuggning och dither ger 16-bitarskänslan. All spellogik bor
+   kvar i vanliga världskoordinater; bara ritlagret projicerar om. */
 function utext(txt,x,y,st,farg,just,kant){
   g.font = 'bold '+st+'px Trebuchet MS';
   g.textAlign = just||'center'; g.textBaseline = 'middle';
@@ -761,439 +774,767 @@ function utext(txt,x,y,st,farg,just,kant){
   g.strokeText(txt,x,y);
   g.fillStyle = farg; g.fillText(txt,x,y);
 }
-function skugga(x,y,w){
-  g.fillStyle = 'rgba(10,14,8,0.28)';
-  g.beginPath(); g.ellipse(x,y,w,w*0.38,0,0,7); g.fill();
+function skugga(sx,sy,w){
+  g.fillStyle = 'rgba(8,12,8,0.3)';
+  g.beginPath(); g.ellipse(sx,sy+1,w,w*0.48,0,0,7); g.fill();
 }
+function nyDuk(w,h){
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const k = c.getContext('2d');
+  k.imageSmoothingEnabled = false;
+  return [c,k];
+}
+const SPR = { gras:[], vatten:null, strand:null, tall:[], sten:null, malm:null,
+  bar:null, barTom:null, blomma:[], grus:null, stubbe:null, bygg:{} };
 
-/* ---- terräng ---- */
-function ritaMark(){
-  const t0x = Math.max(0, Math.floor(kamX/TS)), t1x = Math.min(MAPW-1, Math.floor((kamX+VIEW_W)/TS));
-  const t0y = Math.max(0, Math.floor(kamY/TS)), t1y = Math.min(MAPH-1, Math.floor((kamY+VIEW_H)/TS));
-  for(let ty=t0y; ty<=t1y; ty++) for(let tx=t0x; tx<=t1x; tx++){
-    const i2 = idx(tx,ty), px = tx*TS, py = ty*TS, br = brus2(tx,ty);
-    const m = mark[i2];
-    if(m===M_VATTEN){
-      g.fillStyle = br<0.5? '#2e5f9e':'#2a568f'; g.fillRect(px,py,TS,TS);
-      if(brus2(tx*3,ty*7)>0.72){
-        const våg = Math.sin(tid*1.8 + tx*1.7 + ty*2.3);
-        if(våg>0.3){ g.fillStyle = 'rgba(120,170,220,0.5)'; g.fillRect(px+4+((våg*6)|0), py+TS/2, 8, 2); }
+/* ---- spritbageri: markrutor ---- */
+function bakaRuta(fn){
+  // diamanten blåses upp ~2 px åt alla håll så grannrutor överlappar varandra —
+  // annars lämnar antialiasingen på klippkanterna synliga sömmar mellan rutorna
+  const [c,k] = nyDuk(52,28);
+  k.save();
+  k.translate(2,2);
+  k.beginPath(); k.moveTo(24,-2); k.lineTo(50,12); k.lineTo(24,26); k.lineTo(-2,12); k.closePath();
+  k.clip();
+  fn(k);
+  k.restore();
+  return c;
+}
+function bakaTiles(){
+  for(let v=0; v<4; v++){
+    SPR.gras.push(bakaRuta(k=>{
+      k.fillStyle = '#4f8f3c'; k.fillRect(-2,-2,52,30);
+      // dither-textur i två gröna toner
+      for(let i=0;i<46;i++){
+        const px = (brus2(i,v)*48)|0, py = (brus2(i,v+9)*24)|0;
+        k.fillStyle = brus2(i,v+17)<0.5? '#478536' : '#579a44';
+        k.fillRect(px,py,2,1);
       }
-    } else if(m===M_STRAND){
-      g.fillStyle = br<0.5? '#d8c07a':'#cdb46e'; g.fillRect(px,py,TS,TS);
-      if(br>0.8){ g.fillStyle = '#c0a75f'; g.fillRect(px+((br*17)|0)%18+2, py+((br*31)|0)%18+2, 3, 2); }
-    } else {
-      g.fillStyle = br<0.45? '#4e8f3a' : br<0.9? '#478535' : '#40792f';
-      g.fillRect(px,py,TS,TS);
-      if(brus2(tx*7+3,ty*5+1)>0.86){ g.fillStyle = '#54984012'; g.fillStyle = 'rgba(84,152,64,0.5)';
-        g.fillRect(px+3,py+5,2,4); g.fillRect(px+13,py+12,2,4); }
-    }
-    const o = obj[i2];
-    if(o===O_BLOMMA){
-      const c = ['#efe6d0','#ffd97a','#e893b8'][((br*37)|0)%3];
-      g.fillStyle = c; g.fillRect(px+6+((br*13)|0)%9, py+6+((br*29)|0)%9, 3,3);
-      g.fillStyle = '#3c7030'; g.fillRect(px+7+((br*13)|0)%9, py+9+((br*29)|0)%9, 1,3);
-    } else if(o===O_STUBBE){
-      g.fillStyle = '#6b4b28'; g.beginPath(); g.ellipse(px+12,py+13,6,4.5,0,0,7); g.fill();
-      g.fillStyle = '#a8895c'; g.beginPath(); g.ellipse(px+12,py+12,5,3.6,0,0,7); g.fill();
-    } else if(o===O_GRUS){
-      g.fillStyle = '#7d7466';
-      g.fillRect(px+4,py+6,5,4); g.fillRect(px+13,py+12,6,4); g.fillRect(px+9,py+16,4,3); g.fillRect(px+15,py+4,4,3);
-    }
-  }
-}
-
-/* ---- naturobjekt (djupsorterade) ---- */
-function ritaTall(tx,ty){
-  const px = tx*TS+TS/2, py = ty*TS+TS-2;
-  const br = brus2(tx,ty), h = 30+br*14, sv = Math.sin(tid*1.1+tx*2.1+ty)*1.4;
-  skugga(px,py+1,10);
-  g.fillStyle = '#5d4426'; g.fillRect(px-2, py-7, 4, 8);
-  const gron = ['#194d2a','#1f5c33','#2a7040'];
-  for(let i=0;i<3;i++){
-    const w = 13-(i*3.4), by = py-6-i*(h/3.6), fx = px+sv*(i/2);
-    g.fillStyle = gron[i];
-    g.beginPath(); g.moveTo(fx, by-h/2.6); g.lineTo(fx-w, by); g.lineTo(fx+w, by); g.closePath(); g.fill();
-  }
-}
-function ritaSten(tx,ty){
-  const px = tx*TS+TS/2, py = ty*TS+TS-3, br = brus2(tx,ty);
-  skugga(px,py+1,10);
-  g.fillStyle = '#6f6f78'; g.beginPath(); g.ellipse(px-4,py-4,8,7,0,0,7); g.fill();
-  g.fillStyle = '#8b8b93'; g.beginPath(); g.ellipse(px+3,py-6,7,6.4,0,0,7); g.fill();
-  g.fillStyle = '#a8a8b0'; g.beginPath(); g.ellipse(px+1,py-9,4,3,0,0,7); g.fill();
-  if(br>0.5){ g.fillStyle = '#5a5a63'; g.fillRect(px-8,py-2,4,3); }
-}
-function ritaMalm(tx,ty){
-  const px = tx*TS+TS/2, py = ty*TS+TS-3;
-  skugga(px,py+1,10);
-  g.fillStyle = '#4c4450'; g.beginPath(); g.ellipse(px-3,py-5,8,7,0,0,7); g.fill();
-  g.fillStyle = '#5f5560'; g.beginPath(); g.ellipse(px+4,py-6,6.4,5.6,0,0,7); g.fill();
-  g.fillStyle = '#e8a13c';
-  g.fillRect(px-5,py-8,3,3); g.fillRect(px+3,py-9,3,2); g.fillRect(px,py-4,2,3);
-}
-function ritaBar(tx,ty){
-  const px = tx*TS+TS/2, py = ty*TS+TS-4;
-  skugga(px,py+2,8);
-  g.fillStyle = '#2f6b35'; g.beginPath(); g.ellipse(px,py-4,9,7,0,0,7); g.fill();
-  g.fillStyle = '#3c7f42'; g.beginPath(); g.ellipse(px-3,py-7,5,4,0,0,7); g.fill();
-  if(objHP[idx(tx,ty)]>0){
-    g.fillStyle = '#c33b3b';
-    g.fillRect(px-5,py-6,3,3); g.fillRect(px+2,py-8,3,3); g.fillRect(px-1,py-3,3,3);
-  }
-}
-
-/* ---- byggnader ---- */
-function ritaTorvtak(x,y,w,h,res){
-  g.fillStyle = '#4b7530'; g.fillRect(x,y,w,h);
-  g.fillStyle = '#5d8f3c'; g.fillRect(x+1,y+1,w-2,h-2);
-  for(let i=0;i<Math.floor(w/9);i++){
-    g.fillStyle = 'rgba(120,170,80,0.45)';
-    g.fillRect(x+3+i*9, y+2+((brus2(i,x|0)*h/2)|0), 4, 2);
-  }
-  if(res){ g.fillStyle = '#3c5c26'; g.fillRect(x, y+h/2-1, w, 2); }
-}
-function ritaTimmer(x,y,w,h){
-  g.fillStyle = '#6b4b28'; g.fillRect(x,y,w,h);
-  g.fillStyle = '#8a6337'; g.fillRect(x+1,y+1,w-2,h-2);
-  for(let i=1;i<h/6;i++){ g.fillStyle = 'rgba(70,48,24,0.55)'; g.fillRect(x+1, y+i*6, w-2, 1); }
-}
-function ritaBygg(b){
-  const d = b.def, px = b.tx*TS, py = b.ty*TS, w = d.w*TS, h = d.h*TS;
-  g.save();
-  if(b.tid<0.22) g.translate(slump(-1.6,1.6), slump(-1.2,1.2));
-  if(b.ny>0){ const s = 1-(b.ny/0.35)*0.4; g.translate(px+w/2, py+h); g.scale(s,s); g.translate(-(px+w/2), -(py+h)); }
-  const natt = SPEL.fas!=='dag';
-  switch(b.typ){
-    case 'langhus':{
-      skugga(px+w/2, py+h-2, w*0.52);
-      ritaTimmer(px+3, py+22, w-6, h-24);
-      // gavlar + stort torvtak
-      ritaTorvtak(px-3, py+8, w+6, 22, true);
-      g.fillStyle = '#4b7530';
-      g.beginPath(); g.moveTo(px+w/2, py-6); g.lineTo(px-3, py+12); g.lineTo(px+w+3, py+12); g.closePath(); g.fill();
-      g.fillStyle = '#5d8f3c';
-      g.beginPath(); g.moveTo(px+w/2, py-2); g.lineTo(px+2, py+11); g.lineTo(px+w-2, py+11); g.closePath(); g.fill();
-      // draksniderier
-      g.strokeStyle = '#c89334'; g.lineWidth = 3; g.lineCap='round';
-      g.beginPath(); g.moveTo(px+4,py+10); g.quadraticCurveTo(px-5,py+2, px+1,py-6); g.stroke();
-      g.beginPath(); g.moveTo(px+w-4,py+10); g.quadraticCurveTo(px+w+5,py+2, px+w-1,py-6); g.stroke();
-      // dörr + fönster
-      g.fillStyle = '#3a2814'; g.fillRect(px+w/2-7, py+h-18, 14, 18);
-      g.fillStyle = natt? '#ffd97a':'#241a10';
-      g.fillRect(px+10, py+34, 7, 7); g.fillRect(px+w-17, py+34, 7, 7);
-      break; }
-    case 'stuga':{
-      skugga(px+w/2, py+h-2, w*0.5);
-      ritaTimmer(px+3, py+14, w-6, h-16);
-      ritaTorvtak(px, py+2, w, 15, true);
-      g.fillStyle = '#3a2814'; g.fillRect(px+w/2-5, py+h-13, 10, 13);
-      g.fillStyle = natt? '#ffd97a':'#241a10'; g.fillRect(px+7, py+22, 6, 6);
-      break; }
-    case 'koja': case 'brott': case 'gruva':{
-      skugga(px+w/2, py+h-2, w*0.5);
-      ritaTimmer(px+4, py+16, w-8, h-18);
-      ritaTorvtak(px+1, py+4, w-2, 14, false);
-      g.fillStyle = '#3a2814'; g.fillRect(px+w/2-5, py+h-12, 10, 12);
-      // skylt med jobbfärg + hög med råvaror
-      const jf = b.typ==='koja'? '#8a6337' : b.typ==='brott'? '#8b8b93' : '#e8a13c';
-      g.fillStyle = '#241a10'; g.fillRect(px+w-14, py+18, 11, 11);
-      g.fillStyle = jf; g.fillRect(px+w-12, py+20, 7, 7);
-      if(b.typ==='koja'){ g.fillStyle = '#7a5c38'; g.fillRect(px+3, py+h-8, 8, 3); g.fillRect(px+4, py+h-11, 8, 3); }
-      if(b.typ==='brott'){ g.fillStyle = '#8b8b93'; g.beginPath(); g.ellipse(px+8,py+h-6,6,4,0,0,7); g.fill(); }
-      if(b.typ==='gruva'){ g.fillStyle = '#4c4450'; g.beginPath(); g.ellipse(px+8,py+h-6,6,4,0,0,7); g.fill();
-        g.fillStyle = '#e8a13c'; g.fillRect(px+5,py+h-8,2,2); g.fillRect(px+10,py+h-7,2,2); }
-      break; }
-    case 'aker':{
-      g.fillStyle = '#6b4e2c'; g.fillRect(px+1,py+1,w-2,h-2);
-      for(let r=0;r<4;r++){
-        g.fillStyle = '#59401f'; g.fillRect(px+2, py+4+r*11, w-4, 3);
-        const vaxt = Math.min(1, b.tid/25);
-        g.fillStyle = vaxt>0.7? '#d9b64a' : '#7fb349';
-        for(let c2=0;c2<d.w*3;c2++){
-          const hh = 2+vaxt*5;
-          g.fillRect(px+5+c2*7, py+4+r*11-hh+2, 2, hh);
-        }
+      for(let i=0;i<5;i++){
+        const px = 6+(brus2(i,v+31)*36)|0, py = 4+(brus2(i,v+43)*16)|0;
+        k.fillStyle = '#3d7a2e'; k.fillRect(px,py,1,3);
+        k.fillStyle = '#63a850'; k.fillRect(px+1,py,1,2);
       }
-      g.strokeStyle = '#6b4b28'; g.lineWidth = 2; g.strokeRect(px+1,py+1,w-2,h-2);
-      break; }
-    case 'bod':{
-      skugga(px+w/2, py+h-2, w*0.48);
-      ritaTimmer(px+3, py+12, w-6, h-14);
-      g.fillStyle = '#59401f'; g.fillRect(px, py+2, w, 12);
-      g.fillStyle = '#6f5228'; g.fillRect(px+1, py+3, w-2, 9);
-      g.fillStyle = '#8a6337';
-      g.beginPath(); g.ellipse(px+9,py+h-6,5,6,0,0,7); g.fill();
-      g.beginPath(); g.ellipse(px+19,py+h-5,5,6,0,0,7); g.fill();
-      g.fillStyle = '#5d4426'; g.fillRect(px+5,py+h-9,8,2); g.fillRect(px+15,py+h-8,8,2);
-      break; }
-    case 'smedja':{
-      skugga(px+w/2, py+h-2, w*0.5);
-      g.fillStyle = '#6f6f78'; g.fillRect(px+3, py+14, w-6, h-16);
-      g.fillStyle = '#8b8b93'; g.fillRect(px+4, py+15, w-8, h-18);
-      g.fillStyle = '#4a4a52'; g.fillRect(px+w-14, py-4, 9, 20);
-      ritaTorvtak(px, py+6, w-12, 12, false);
-      g.fillStyle = '#33333a'; g.fillRect(px+8, py+h-13, 12, 5);   // städ
-      g.fillStyle = '#241a10'; g.fillRect(px+10, py+h-8, 3, 8); g.fillRect(px+15, py+h-8, 3, 8);
-      const glod = 0.55+0.45*Math.sin(tid*6);
-      g.fillStyle = 'rgba(255,140,40,'+(0.35+glod*0.4)+')'; g.fillRect(px+w-22, py+h-14, 8, 8);
-      if(Math.random()<0.12) partiklar.push({x:px+w-9, y:py-4, vx:slump(-4,4), vy:-22, liv:1.4, farg:'#8a8a90', st:3, rok:true});
-      break; }
-    case 'palissad':{
-      const koppla = riktn=>{ const nb = bygget(b.tx+riktn[0], b.ty+riktn[1]); return nb && (nb.typ==='palissad'||nb.typ==='port'||nb.typ==='stenmur'); };
-      g.fillStyle = '#5d4426';
+    }));
+  }
+  SPR.strand = bakaRuta(k=>{
+    k.fillStyle = '#d8c07a'; k.fillRect(-2,-2,52,30);
+    for(let i=0;i<34;i++){
+      const px = (brus2(i,77)*48)|0, py = (brus2(i,88)*24)|0;
+      k.fillStyle = brus2(i,99)<0.5? '#cdb46e' : '#e2cc8c';
+      k.fillRect(px,py,2,1);
+    }
+    k.fillStyle = '#b8a05c'; k.fillRect(10,16,3,2); k.fillRect(32,7,3,2);
+  });
+  SPR.vatten = bakaRuta(k=>{
+    k.fillStyle = '#2e5f9e'; k.fillRect(-2,-2,52,30);
+    for(let i=0;i<30;i++){
+      const px = (brus2(i,55)*48)|0, py = (brus2(i,66)*24)|0;
+      k.fillStyle = brus2(i,44)<0.5? '#2a568f' : '#3a6fae';
+      k.fillRect(px,py,3,1);
+    }
+    k.fillStyle = 'rgba(150,195,235,0.35)';
+    k.beginPath(); k.moveTo(24,1); k.lineTo(46,12); k.lineTo(44,13); k.lineTo(24,3); k.closePath(); k.fill();
+  });
+  SPR.grus = bakaRuta(k=>{
+    k.fillStyle = 'rgba(0,0,0,0)'; k.clearRect(0,0,48,26);
+    const st = [[14,10,5,3],[26,14,6,3],[20,17,4,2],[30,8,4,2],[10,14,3,2]];
+    for(const [x,y,w,h] of st){
+      k.fillStyle = '#6e6558'; k.fillRect(x,y+1,w,h);
+      k.fillStyle = '#8a8072'; k.fillRect(x,y,w,h-1);
+    }
+  });
+  SPR.stubbe = (()=>{ const [c,k] = nyDuk(24,16);
+    k.fillStyle = '#4e3a20'; k.beginPath(); k.ellipse(12,10,8,4.4,0,0,7); k.fill();
+    k.fillStyle = '#6b4b28'; k.beginPath(); k.ellipse(12,8,8,4.4,0,0,7); k.fill();
+    k.fillStyle = '#a8895c'; k.beginPath(); k.ellipse(12,8,5.6,3,0,0,7); k.fill();
+    k.strokeStyle = '#7a5c38'; k.lineWidth = 1;
+    k.beginPath(); k.ellipse(12,8,3.4,1.8,0,0,7); k.stroke();
+    return c; })();
+  for(let v=0; v<3; v++){
+    SPR.blomma.push((()=>{ const [c,k] = nyDuk(12,12);
+      const f = ['#efe6d0','#ffd97a','#e893b8'][v];
+      k.fillStyle = '#3c7030'; k.fillRect(5,6,2,5);
+      k.fillStyle = f;
+      k.fillRect(3,2,6,2); k.fillRect(4,0,4,6);
+      k.fillStyle = '#c89334'; k.fillRect(5,3,2,2);
+      return c; })());
+  }
+}
+
+/* ---- spritbageri: natur ---- */
+function bakaNatur(){
+  for(let v=0; v<2; v++){
+    SPR.tall.push((()=>{ const [c,k] = nyDuk(44,58);
+      const mx = 22, hv = v? 4 : 0;
+      k.fillStyle = '#3c2c16'; k.fillRect(mx-3,46,6,9);
+      k.fillStyle = '#5d4426'; k.fillRect(mx-2,46,3,9);
+      const gron = ['#153f22','#1c522c','#26663a'];
+      const ljus = ['#1e4f2c','#2a6a3c','#37814c'];
       for(let i=0;i<3;i++){
-        const lx = px+3+i*7;
-        g.fillRect(lx, py+3, 5, TS-4);
-        g.beginPath(); g.moveTo(lx,py+4); g.lineTo(lx+2.5,py-2); g.lineTo(lx+5,py+4); g.closePath(); g.fill();
+        const w = 19-i*5, by = 48-i*(13+hv*0.4), th = 17+hv;
+        // vänster (skugga) och höger (ljus) halva av varje gran-våning
+        k.fillStyle = gron[i];
+        k.beginPath(); k.moveTo(mx,by-th); k.lineTo(mx-w,by); k.lineTo(mx,by+2); k.closePath(); k.fill();
+        k.fillStyle = ljus[i];
+        k.beginPath(); k.moveTo(mx,by-th); k.lineTo(mx+w,by); k.lineTo(mx,by+2); k.closePath(); k.fill();
+        k.strokeStyle = '#0e2b16'; k.lineWidth = 1.2;
+        k.beginPath(); k.moveTo(mx-w,by); k.lineTo(mx,by-th); k.lineTo(mx+w,by); k.stroke();
+        // snötäckta? nej — barrglitter
+        k.fillStyle = '#4d9a5e';
+        k.fillRect(mx+3+i, by-6, 2, 2); k.fillRect(mx-6+i, by-3, 2, 2);
       }
-      g.fillStyle = '#7a5c38';
-      for(let i=0;i<3;i++) g.fillRect(px+4+i*7, py+3, 2, TS-5);
-      if(koppla([1,0])||koppla([-1,0])){ g.fillStyle = '#6b4b28'; g.fillRect(px, py+8, TS, 3); g.fillRect(px, py+16, TS, 3); }
-      break; }
-    case 'stenmur':{
-      g.fillStyle = '#5a5a63'; g.fillRect(px+1, py-2, TS-2, TS+1);
-      g.fillStyle = '#7d7d85'; g.fillRect(px+2, py-1, TS-4, TS-2);
-      g.fillStyle = '#94949c';
-      g.fillRect(px+3,py+1,8,5); g.fillRect(px+13,py+1,7,5); g.fillRect(px+3,py+8,6,5); g.fillRect(px+11,py+8,9,5); g.fillRect(px+5,py+15,9,4);
-      break; }
-    case 'port':{
-      g.fillStyle = '#5d4426'; g.fillRect(px, py-4, 4, TS+4); g.fillRect(px+TS-4, py-4, 4, TS+4);
-      g.fillStyle = '#6b4b28'; g.fillRect(px, py-6, TS, 5);
-      const opp = b.oppen;
+      return c; })());
+  }
+  SPR.sten = (()=>{ const [c,k] = nyDuk(40,30);
+    const block = [[12,20,10,8],[26,18,8,7],[19,12,9,8]];
+    for(const [x,y,rx,ry] of block){
+      k.fillStyle = '#585862'; k.beginPath(); k.ellipse(x+1,y+2,rx,ry*0.8,0,0,7); k.fill();
+      k.fillStyle = '#8b8b93'; k.beginPath(); k.ellipse(x,y,rx,ry*0.8,0,0,7); k.fill();
+      k.fillStyle = '#aeaeb6'; k.beginPath(); k.ellipse(x-rx*0.3,y-ry*0.35,rx*0.45,ry*0.3,0,0,7); k.fill();
+      k.strokeStyle = '#3c3c46'; k.lineWidth = 1.2;
+      k.beginPath(); k.ellipse(x,y,rx,ry*0.8,0,0,7); k.stroke();
+    }
+    return c; })();
+  SPR.malm = (()=>{ const [c,k] = nyDuk(40,30);
+    const block = [[13,19,10,8],[27,17,8,7]];
+    for(const [x,y,rx,ry] of block){
+      k.fillStyle = '#39323e'; k.beginPath(); k.ellipse(x+1,y+2,rx,ry*0.8,0,0,7); k.fill();
+      k.fillStyle = '#554b5c'; k.beginPath(); k.ellipse(x,y,rx,ry*0.8,0,0,7); k.fill();
+      k.strokeStyle = '#241f2a'; k.lineWidth = 1.2;
+      k.beginPath(); k.ellipse(x,y,rx,ry*0.8,0,0,7); k.stroke();
+    }
+    k.fillStyle = '#e8a13c';
+    k.fillRect(9,15,3,3); k.fillRect(17,20,2,2); k.fillRect(25,13,3,2); k.fillRect(30,19,2,2);
+    k.fillStyle = '#ffd97a'; k.fillRect(10,16,1,1); k.fillRect(26,14,1,1);
+    return c; })();
+  const bakaBuske = medBar=>{ const [c,k] = nyDuk(30,24);
+    k.fillStyle = '#1e4a26'; k.beginPath(); k.ellipse(15,15,12,8,0,0,7); k.fill();
+    k.fillStyle = '#2f6b35'; k.beginPath(); k.ellipse(15,13,11,7.4,0,0,7); k.fill();
+    k.fillStyle = '#3f8347'; k.beginPath(); k.ellipse(11,10,6,4,0,0,7); k.fill();
+    k.strokeStyle = '#12331a'; k.lineWidth = 1.2;
+    k.beginPath(); k.ellipse(15,13,11,7.4,0,0,7); k.stroke();
+    if(medBar){
+      k.fillStyle = '#c33b3b';
+      k.fillRect(8,12,3,3); k.fillRect(16,8,3,3); k.fillRect(20,14,3,3); k.fillRect(12,16,3,3);
+      k.fillStyle = '#e86a5a'; k.fillRect(8,12,1,1); k.fillRect(16,8,1,1); k.fillRect(20,14,1,1);
+    }
+    return c; };
+  SPR.bar = bakaBuske(true);
+  SPR.barTom = bakaBuske(false);
+}
+
+/* ---- spritbageri: byggnader (iso-lådor) ----
+   Fotavtryckets topphörn (världens (tx,ty)-hörn) läggs i spritens origo.
+   Basdiamantens hörn: T=(0,0) R=(W,W/2) B=(W-H,(W+H)/2) L=(-H,H/2). */
+function byggDuk(w,h,hojd){
+  const W = w*24, H = h*24;
+  const [c,k] = nyDuk(W+H+12, (W+H)/2 + hojd + 26);
+  const ox = H+6, oy = hojd+22;
+  k.translate(ox,oy);
+  return [c,k,{ox,oy,W,H}];
+}
+function vaggQ(k, p1, p2, hj, farg, kant){
+  k.fillStyle = farg;
+  k.beginPath();
+  k.moveTo(p1[0],p1[1]); k.lineTo(p2[0],p2[1]);
+  k.lineTo(p2[0],p2[1]-hj); k.lineTo(p1[0],p1[1]-hj);
+  k.closePath(); k.fill();
+  if(kant!==false){ k.strokeStyle = '#241708'; k.lineWidth = 1.2; k.stroke(); }
+}
+function timra(k, p1, p2, hj, morkF, ljusF){
+  vaggQ(k, p1, p2, hj, morkF);
+  k.strokeStyle = 'rgba(30,18,8,0.5)'; k.lineWidth = 1;
+  for(let y=5; y<hj; y+=5){
+    k.beginPath();
+    k.moveTo(p1[0], p1[1]-y); k.lineTo(p2[0], p2[1]-y);
+    k.stroke();
+  }
+  k.fillStyle = ljusF;
+  k.beginPath();
+  k.moveTo(p1[0],p1[1]-hj); k.lineTo(p2[0],p2[1]-hj);
+  k.lineTo(p2[0],p2[1]-hj+2); k.lineTo(p1[0],p1[1]-hj+2);
+  k.closePath(); k.fill();
+}
+function torvTak(k, T, R, B, L, vh, rh){
+  // sadeltak med ås längs långsidan; gräs på taket
+  const Tu = [T[0],T[1]-vh], Ru = [R[0],R[1]-vh], Bu = [B[0],B[1]-vh], Lu = [L[0],L[1]-vh];
+  const G1 = [(Tu[0]+Lu[0])/2, (Tu[1]+Lu[1])/2 - rh];
+  const G2 = [(Ru[0]+Bu[0])/2, (Ru[1]+Bu[1])/2 - rh];
+  // norrsluttning (mörkare) + södersluttning (ljusare)
+  k.fillStyle = '#436a2b';
+  k.beginPath(); k.moveTo(Tu[0],Tu[1]); k.lineTo(Ru[0],Ru[1]); k.lineTo(G2[0],G2[1]); k.lineTo(G1[0],G1[1]); k.closePath(); k.fill();
+  k.strokeStyle = '#24380f'; k.lineWidth = 1.2; k.stroke();
+  k.fillStyle = '#5d8f3c';
+  k.beginPath(); k.moveTo(Lu[0],Lu[1]); k.lineTo(Bu[0],Bu[1]); k.lineTo(G2[0],G2[1]); k.lineTo(G1[0],G1[1]); k.closePath(); k.fill();
+  k.strokeStyle = '#24380f'; k.stroke();
+  // gräsplytt på taket
+  k.fillStyle = '#79b356';
+  for(let i=0;i<5;i++){
+    const t = 0.15+i*0.17;
+    k.fillRect(mix(Lu[0],Bu[0],t)+mix(0,G2[0]-Bu[0],0.4), mix(Lu[1],Bu[1],t)+mix(0,G2[1]-Bu[1],0.4), 3, 2);
+  }
+  // gavlar (trä)
+  k.fillStyle = '#6b4b28';
+  k.beginPath(); k.moveTo(Tu[0],Tu[1]); k.lineTo(Lu[0],Lu[1]); k.lineTo(G1[0],G1[1]); k.closePath(); k.fill();
+  k.strokeStyle = '#241708'; k.stroke();
+  k.fillStyle = '#8a6337';
+  k.beginPath(); k.moveTo(Ru[0],Ru[1]); k.lineTo(Bu[0],Bu[1]); k.lineTo(G2[0],G2[1]); k.closePath(); k.fill();
+  k.strokeStyle = '#241708'; k.stroke();
+  return [G1,G2];
+}
+function drakHuvud(k, x, y, at){
+  k.strokeStyle = '#e8b84b'; k.lineWidth = 2.6; k.lineCap = 'round';
+  k.beginPath(); k.moveTo(x, y+5);
+  k.quadraticCurveTo(x+at*7, y-2, x+at*4, y-8);
+  k.stroke();
+  k.fillStyle = '#e8b84b'; k.fillRect(x+at*4-2, y-10, 4, 4);
+}
+function hornPkt(W,H){ return { T:[0,0], R:[W,W/2], B:[W-H,(W+H)/2], L:[-H,H/2] }; }
+function bakaBygg(){
+  const B = SPR.bygg;
+  // Långhuset 3×3
+  B.langhus = (()=>{ const [c,k,m] = byggDuk(3,3,64);
+    const {T,R,B:Bo,L} = hornPkt(m.W,m.H), vh = 30;
+    timra(k, L, Bo, vh, '#5a3f22', '#7a5c38');
+    timra(k, Bo, R, vh, '#77552e', '#96703f');
+    // stengrund
+    k.fillStyle = '#6f6f78';
+    vaggQ(k, [L[0],L[1]+1], [Bo[0],Bo[1]+1], 5, '#6f6f78', false);
+    vaggQ(k, [Bo[0],Bo[1]+1], [R[0],R[1]+1], 5, '#83838c', false);
+    const [G1,G2] = torvTak(k, T, R, Bo, L, vh, 22);
+    drakHuvud(k, G1[0], G1[1], -1);
+    drakHuvud(k, G2[0], G2[1], 1);
+    // dörr + fönster på sydöstväggen
+    const dx = mix(Bo[0],R[0],0.5), dy = mix(Bo[1],R[1],0.5);
+    k.fillStyle = '#2a1c0c'; k.fillRect(dx-6, dy-19, 12, 19);
+    k.strokeStyle = '#241708'; k.strokeRect(dx-6, dy-19, 12, 19);
+    return { duk:c, ox:m.ox, oy:m.oy,
+      fonster:[[mix(Bo[0],R[0],0.2)-3, mix(Bo[1],R[1],0.2)-20, 6, 6],
+               [mix(Bo[0],R[0],0.8)-3, mix(Bo[1],R[1],0.8)-20, 6, 6],
+               [mix(L[0],Bo[0],0.5)-3, mix(L[1],Bo[1],0.5)-19, 5, 5]] };
+  })();
+  // 2×2-hus med varianter
+  const husBas = (rita)=>{ const [c,k,m] = byggDuk(2,2,46);
+    const {T,R,B:Bo,L} = hornPkt(m.W,m.H), vh = 20;
+    timra(k, L, Bo, vh, '#5a3f22', '#7a5c38');
+    timra(k, Bo, R, vh, '#77552e', '#96703f');
+    torvTak(k, T, R, Bo, L, vh, 14);
+    const fon = rita? rita(k, {T,R,B:Bo,L}, vh) : [];
+    return { duk:c, ox:m.ox, oy:m.oy, fonster:fon||[] };
+  };
+  B.stuga = husBas((k,p)=>{
+    const dx = mix(p.B[0],p.R[0],0.5), dy = mix(p.B[1],p.R[1],0.5);
+    k.fillStyle = '#2a1c0c'; k.fillRect(dx-5, dy-14, 10, 14);
+    return [[mix(p.L[0],p.B[0],0.5)-3, mix(p.L[1],p.B[1],0.5)-15, 5, 5]];
+  });
+  const skyltHus = (farg, rita2)=>husBas((k,p)=>{
+    const dx = mix(p.B[0],p.R[0],0.42), dy = mix(p.B[1],p.R[1],0.42);
+    k.fillStyle = '#2a1c0c'; k.fillRect(dx-5, dy-13, 10, 13);
+    const sx2 = mix(p.L[0],p.B[0],0.5), sy2 = mix(p.L[1],p.B[1],0.5);
+    k.fillStyle = '#241708'; k.fillRect(sx2-6, sy2-16, 12, 11);
+    k.fillStyle = farg; k.fillRect(sx2-4, sy2-14, 8, 7);
+    if(rita2) rita2(k,p);
+    return [];
+  });
+  B.koja = skyltHus('#8a6337', (k,p)=>{
+    // vedstapel framför
+    k.fillStyle = '#7a5c38';
+    k.fillRect(p.B[0]+4, p.B[1]-6, 12, 3); k.fillRect(p.B[0]+5, p.B[1]-9, 10, 3);
+    k.strokeStyle = '#3c2c16'; k.lineWidth = 1; k.strokeRect(p.B[0]+4, p.B[1]-9, 12, 6);
+  });
+  B.brott = skyltHus('#9a9aa4', (k,p)=>{
+    k.fillStyle = '#8b8b93'; k.beginPath(); k.ellipse(p.B[0]+9, p.B[1]-4, 7, 4, 0, 0, 7); k.fill();
+    k.strokeStyle = '#3c3c46'; k.stroke();
+  });
+  B.gruva = skyltHus('#e8a13c', (k,p)=>{
+    k.fillStyle = '#4c4450'; k.beginPath(); k.ellipse(p.B[0]+9, p.B[1]-4, 7, 4, 0, 0, 7); k.fill();
+    k.fillStyle = '#e8a13c'; k.fillRect(p.B[0]+6, p.B[1]-6, 2, 2); k.fillRect(p.B[0]+11, p.B[1]-5, 2, 2);
+  });
+  B.bod = (()=>{ const [c,k,m] = byggDuk(2,2,40);
+    const {T,R,B:Bo,L} = hornPkt(m.W,m.H), vh = 18;
+    timra(k, L, Bo, vh, '#5a3f22', '#7a5c38');
+    timra(k, Bo, R, vh, '#77552e', '#96703f');
+    // platt torvtak med kant
+    const Tu=[T[0],T[1]-vh], Ru=[R[0],R[1]-vh], Bu=[Bo[0],Bo[1]-vh], Lu=[L[0],L[1]-vh];
+    k.fillStyle = '#5d8f3c';
+    k.beginPath(); k.moveTo(Tu[0],Tu[1]); k.lineTo(Ru[0],Ru[1]); k.lineTo(Bu[0],Bu[1]); k.lineTo(Lu[0],Lu[1]); k.closePath(); k.fill();
+    k.strokeStyle = '#24380f'; k.lineWidth = 1.2; k.stroke();
+    // tunnor framför
+    for(const t of [0.3, 0.62]){
+      const bx = mix(Bo[0],R[0],t), by = mix(Bo[1],R[1],t)+3;
+      k.fillStyle = '#8a6337'; k.beginPath(); k.ellipse(bx,by-5,5,6,0,0,7); k.fill();
+      k.strokeStyle = '#3c2c16'; k.lineWidth = 1; k.stroke();
+      k.beginPath(); k.moveTo(bx-5,by-7); k.lineTo(bx+5,by-7); k.stroke();
+    }
+    return { duk:c, ox:m.ox, oy:m.oy, fonster:[] };
+  })();
+  B.smedja = (()=>{ const [c,k,m] = byggDuk(2,2,58);
+    const {T,R,B:Bo,L} = hornPkt(m.W,m.H), vh = 22;
+    // stenväggar
+    vaggQ(k, L, Bo, vh, '#5f5f68');
+    vaggQ(k, Bo, R, vh, '#7d7d85');
+    k.fillStyle = 'rgba(255,255,255,0.10)';
+    for(let i=0;i<6;i++) k.fillRect(mix(Bo[0],R[0],0.1+i*0.15)-2, mix(Bo[1],R[1],0.1+i*0.15)-6-((i%3)*6), 5, 3);
+    torvTak(k, T, R, Bo, L, vh, 12);
+    // skorsten
+    const skx = T[0]+4, sky = T[1]-vh-10;
+    k.fillStyle = '#4a4a52'; k.fillRect(skx-4, sky-16, 9, 22);
+    k.fillStyle = '#5f5f68'; k.fillRect(skx-4, sky-16, 4, 22);
+    k.strokeStyle = '#241f2a'; k.lineWidth = 1.2; k.strokeRect(skx-4, sky-16, 9, 22);
+    // städ framför
+    const ax = mix(Bo[0],R[0],0.3), ay = mix(Bo[1],R[1],0.3)+4;
+    k.fillStyle = '#33333a'; k.fillRect(ax-6, ay-7, 12, 4);
+    k.fillStyle = '#1f1f26'; k.fillRect(ax-2, ay-3, 4, 4);
+    return { duk:c, ox:m.ox, oy:m.oy, fonster:[], glod:[mix(Bo[0],R[0],0.68), mix(Bo[1],R[1],0.68)-9], rok:[skx, sky-18] };
+  })();
+  // Åker (platt — ritas i markpasset)
+  B.aker = (()=>{ const [c,k,m] = byggDuk(2,2,4);
+    const {T,R,B:Bo,L} = hornPkt(m.W,m.H);
+    k.fillStyle = '#6b4e2c';
+    k.beginPath(); k.moveTo(T[0],T[1]); k.lineTo(R[0],R[1]); k.lineTo(Bo[0],Bo[1]); k.lineTo(L[0],L[1]); k.closePath(); k.fill();
+    k.strokeStyle = '#4a3418'; k.lineWidth = 1.4; k.stroke();
+    // plogfåror längs iso-riktningen
+    k.strokeStyle = '#59401f'; k.lineWidth = 2;
+    for(let i=1;i<5;i++){
+      const t = i/5;
+      k.beginPath();
+      k.moveTo(mix(T[0],L[0],t), mix(T[1],L[1],t));
+      k.lineTo(mix(R[0],Bo[0],t), mix(R[1],Bo[1],t));
+      k.stroke();
+    }
+    return { duk:c, ox:m.ox, oy:m.oy, fonster:[] };
+  })();
+  // Palissad 1×1
+  B.palissad = (()=>{ const [c,k,m] = byggDuk(1,1,34);
+    const {T,R,B:Bo,L} = hornPkt(m.W,m.H);
+    const stolpar = [[L[0]+5,L[1]+2],[T[0],T[1]+6],[Bo[0]-5,Bo[1]-2],[R[0]-6,R[1]+1],[Bo[0]+5,Bo[1]-5]];
+    stolpar.sort((a,b)=>a[1]-b[1]);
+    for(const [px,py] of stolpar){
+      k.fillStyle = '#5a3f22'; k.fillRect(px-3, py-26, 6, 26);
+      k.fillStyle = '#7a5c38'; k.fillRect(px-3, py-26, 3, 26);
+      k.beginPath(); k.moveTo(px-3,py-25); k.lineTo(px,py-32); k.lineTo(px+3,py-25); k.closePath();
+      k.fillStyle = '#8a6337'; k.fill();
+      k.strokeStyle = '#241708'; k.lineWidth = 1.1;
+      k.strokeRect(px-3, py-26, 6, 26);
+    }
+    return { duk:c, ox:m.ox, oy:m.oy, fonster:[] };
+  })();
+  // Stenmur 1×1
+  B.stenmur = (()=>{ const [c,k,m] = byggDuk(1,1,26);
+    const {T,R,B:Bo,L} = hornPkt(m.W,m.H), vh = 20;
+    vaggQ(k, L, Bo, vh, '#5f5f68');
+    vaggQ(k, Bo, R, vh, '#7d7d85');
+    k.fillStyle = '#94949c';
+    k.beginPath(); k.moveTo(T[0],T[1]-vh); k.lineTo(R[0],R[1]-vh); k.lineTo(Bo[0],Bo[1]-vh); k.lineTo(L[0],L[1]-vh); k.closePath(); k.fill();
+    k.strokeStyle = '#33333a'; k.lineWidth = 1.2; k.stroke();
+    k.strokeStyle = 'rgba(40,40,48,0.6)'; k.lineWidth = 1;
+    for(let i=0;i<3;i++){
+      k.beginPath(); k.moveTo(mix(L[0],Bo[0],0.2+i*0.3), mix(L[1],Bo[1],0.2+i*0.3)-4-i*5);
+      k.lineTo(mix(L[0],Bo[0],0.2+i*0.3)+6, mix(L[1],Bo[1],0.2+i*0.3)-4-i*5); k.stroke();
+      k.beginPath(); k.moveTo(mix(Bo[0],R[0],0.25+i*0.3), mix(Bo[1],R[1],0.25+i*0.3)-6-i*4);
+      k.lineTo(mix(Bo[0],R[0],0.25+i*0.3)+6, mix(Bo[1],R[1],0.25+i*0.3)-6-i*4); k.stroke();
+    }
+    return { duk:c, ox:m.ox, oy:m.oy, fonster:[] };
+  })();
+  // Port 1×1 (dörrarna ritas dynamiskt)
+  B.port = (()=>{ const [c,k,m] = byggDuk(1,1,40);
+    const {R,B:Bo,L} = hornPkt(m.W,m.H);
+    for(const [px,py] of [[L[0]+3,L[1]+1],[R[0]-3,R[1]+1]]){
+      k.fillStyle = '#5a3f22'; k.fillRect(px-3, py-34, 7, 34);
+      k.fillStyle = '#7a5c38'; k.fillRect(px-3, py-34, 3, 34);
+      k.strokeStyle = '#241708'; k.lineWidth = 1.1; k.strokeRect(px-3, py-34, 7, 34);
+    }
+    // överliggare
+    k.fillStyle = '#6b4b28'; k.fillRect(L[0]-1, L[1]-38, R[0]-L[0]+6, 6);
+    k.strokeStyle = '#241708'; k.strokeRect(L[0]-1, L[1]-38, R[0]-L[0]+6, 6);
+    return { duk:c, ox:m.ox, oy:m.oy, fonster:[], dorr:[L[0]+4, L[1]-1, R[0]-2, R[1]-1] };
+  })();
+  // Skyttetorn 1×1
+  B.torn = (()=>{ const [c,k,m] = byggDuk(1,1,86);
+    const {T,R,B:Bo,L} = hornPkt(m.W,m.H);
+    // ben med kryss
+    k.strokeStyle = '#5a3f22'; k.lineWidth = 4;
+    k.beginPath(); k.moveTo(L[0]+2,L[1]); k.lineTo(L[0]+4,L[1]-44); k.stroke();
+    k.beginPath(); k.moveTo(R[0]-2,R[1]); k.lineTo(R[0]-4,R[1]-44); k.stroke();
+    k.beginPath(); k.moveTo(Bo[0],Bo[1]-2); k.lineTo(Bo[0],Bo[1]-46); k.stroke();
+    k.strokeStyle = '#4a3418'; k.lineWidth = 2;
+    k.beginPath(); k.moveTo(L[0]+3,L[1]-8); k.lineTo(R[0]-3,R[1]-30); k.stroke();
+    k.beginPath(); k.moveTo(L[0]+3,L[1]-30); k.lineTo(R[0]-3,R[1]-8); k.stroke();
+    // plattform + bröstvärn
+    const ph = 46;
+    k.fillStyle = '#7a5c38';
+    k.beginPath(); k.moveTo(T[0],T[1]-ph-4); k.lineTo(R[0]+3,R[1]-ph-4); k.lineTo(Bo[0],Bo[1]-ph-4+6); k.lineTo(L[0]-3,L[1]-ph-4); k.closePath(); k.fill();
+    k.strokeStyle = '#241708'; k.lineWidth = 1.2; k.stroke();
+    timra(k, [L[0]-3,L[1]-ph-3], [Bo[0],Bo[1]-ph+2], 9, '#5a3f22', '#7a5c38');
+    timra(k, [Bo[0],Bo[1]-ph+2], [R[0]+3,R[1]-ph-3], 9, '#77552e', '#96703f');
+    // spetstak
+    const topp = [T[0]+(Bo[0]-T[0])/2, T[1]-86];
+    k.fillStyle = '#436a2b';
+    k.beginPath(); k.moveTo(L[0]-4,L[1]-ph-13); k.lineTo(topp[0],topp[1]); k.lineTo(Bo[0],Bo[1]-ph-13+6); k.closePath(); k.fill();
+    k.fillStyle = '#5d8f3c';
+    k.beginPath(); k.moveTo(Bo[0],Bo[1]-ph-13+6); k.lineTo(topp[0],topp[1]); k.lineTo(R[0]+4,R[1]-ph-13); k.closePath(); k.fill();
+    k.strokeStyle = '#24380f'; k.lineWidth = 1.2;
+    k.beginPath(); k.moveTo(L[0]-4,L[1]-ph-13); k.lineTo(topp[0],topp[1]); k.lineTo(R[0]+4,R[1]-ph-13); k.stroke();
+    // skytten
+    k.fillStyle = '#3f5a70'; k.fillRect(topp[0]-3, T[1]-ph-19, 7, 8);
+    k.fillStyle = '#d8a877'; k.fillRect(topp[0]-2, T[1]-ph-24, 5, 5);
+    k.strokeStyle = '#161016'; k.lineWidth = 1; k.strokeRect(topp[0]-3, T[1]-ph-19, 7, 8);
+    return { duk:c, ox:m.ox, oy:m.oy, fonster:[] };
+  })();
+}
+
+/* ---- markpasset ---- */
+function ritaMarkIso(){
+  const s0 = Math.max(0, Math.floor(kamY/12)-2), s1 = Math.min(MAPW+MAPH-2, Math.ceil((kamY+VIEW_H)/12)+6);
+  const d0 = Math.floor(kamX/24)-2, d1 = Math.ceil((kamX+VIEW_W)/24)+2;
+  for(let s=s0; s<=s1; s++){
+    let d = d0 + (((d0+s)%2!==0)?1:0);
+    for(; d<=d1; d+=2){
+      const tx = (s+d)/2, ty2 = (s-d)/2;
+      if(!inne(tx,ty2)) continue;
+      const i2 = idx(tx,ty2);
+      const sx = tx*24 - ty2*24, sy = (tx+ty2)*12;
+      const m = mark[i2];
+      if(m===M_VATTEN){
+        g.drawImage(SPR.vatten, sx-26, sy-14);
+        if(brus2(tx*3,ty2*7)>0.7){
+          const våg = Math.sin(tid*1.9 + tx*1.7 + ty2*2.3);
+          if(våg>0.25){ g.fillStyle = 'rgba(160,200,240,0.5)'; g.fillRect(sx-8+våg*6, sy+2, 9, 2); }
+        }
+      } else if(m===M_STRAND){
+        g.drawImage(SPR.strand, sx-26, sy-14);
+      } else {
+        g.drawImage(SPR.gras[(brus2(tx,ty2)*4)|0], sx-26, sy-14);
+      }
+      const o = obj[i2];
+      if(o===O_BLOMMA) g.drawImage(SPR.blomma[((brus2(tx*7,ty2*3)*3)|0)], sx-6+((brus2(tx,ty2*5)-0.5)*14), sy-8+((brus2(tx*5,ty2)-0.5)*6));
+      else if(o===O_GRUS) g.drawImage(SPR.grus, sx-26, sy-14);
+      else if(o===O_STUBBE) g.drawImage(SPR.stubbe, sx-12, sy-10);
+    }
+  }
+  // åkrar ligger platt på marken
+  for(const b of byggnader){
+    if(!b || b.typ!=='aker') continue;
+    ritaByggIso(b);
+  }
+}
+
+/* ---- byggnadsritning (sprite + dynamiska detaljer) ---- */
+function ritaByggIso(b){
+  const spr = SPR.bygg[b.typ];
+  const ax = b.tx*24 - b.ty*24, ay = (b.tx+b.ty)*12;
+  if(b.typ==='fackla'){ ritaFackla(b, ax+ (b.def.w*12 - b.def.h*12), ay + (b.def.w+b.def.h)*6); return; }
+  if(!spr) return;
+  g.save();
+  let jx = ax, jy = ay;
+  if(b.tid<0.22){ jx += slump(-1.6,1.6); jy += slump(-1.2,1.2); }
+  if(b.ny>0){ const s = 1-(b.ny/0.35)*0.35;
+    g.translate(jx, jy+12); g.scale(s,s); g.translate(-jx, -(jy+12)); }
+  // markskugga
+  if(b.typ!=='aker'){
+    const cx = jx + (b.def.w*12 - b.def.h*12), cy = jy + (b.def.w+b.def.h)*6;
+    skugga(cx, cy+2, (b.def.w+b.def.h)*7);
+  }
+  g.drawImage(spr.duk, jx-spr.ox, jy-spr.oy);
+  const natt = SPEL.fas!=='dag';
+  if(natt && spr.fonster.length){
+    g.fillStyle = 'rgba(255,217,122,0.92)';
+    for(const [fx2,fy2,fw,fh] of spr.fonster) g.fillRect(jx+fx2, jy+fy2, fw, fh);
+  }
+  if(b.typ==='smedja' && spr.glod){
+    const puls = 0.5+0.5*Math.sin(tid*6);
+    g.fillStyle = 'rgba(255,140,40,'+(0.4+puls*0.5)+')';
+    g.fillRect(jx+spr.glod[0]-4, jy+spr.glod[1]-4, 9, 8);
+    if(Math.random()<0.1)
+      partiklar.push({x:(b.tx+0.55)*TS, y:(b.ty+0.55)*TS, z:56, vx:slump(-4,4), vy:-20, liv:1.4, farg:'#8a8a90', st:3, rok:true});
+  }
+  if(b.typ==='port' && spr.dorr){
+    const [x1,y1,x2,y2] = spr.dorr, opp = b.oppen;
+    const hj = 26*(1-opp);
+    if(hj>2){
       g.fillStyle = '#8a6337';
-      g.fillRect(px+3, py+2+opp*14, TS-6, Math.max(2,(TS-6)*(1-opp)));
-      g.fillStyle = '#59401f';
-      if(opp<0.5) g.fillRect(px+TS/2-1, py+3, 2, (TS-8)*(1-opp));
-      break; }
-    case 'torn':{
-      skugga(px+TS/2, py+TS-2, 10);
-      g.fillStyle = '#5d4426';
-      g.fillRect(px+3, py-14, 3, TS+12); g.fillRect(px+TS-6, py-14, 3, TS+12);
-      g.fillRect(px+2, py+4, TS-4, 3);
-      ritaTimmer(px+1, py-22, TS-2, 12);
-      g.fillStyle = '#4b7530'; g.beginPath();
-      g.moveTo(px+TS/2, py-32); g.lineTo(px-2, py-21); g.lineTo(px+TS+2, py-21); g.closePath(); g.fill();
-      // skytten
-      g.fillStyle = '#3f5a70'; g.fillRect(px+TS/2-3, py-19, 6, 7);
-      g.fillStyle = '#d8a877'; g.fillRect(px+TS/2-2, py-23, 4, 4);
-      break; }
-    case 'fackla':{
-      g.fillStyle = '#5d4426'; g.fillRect(px+TS/2-2, py+6, 4, TS-8);
-      const fl = Math.sin(tid*9+b.tx*3)*2;
-      g.fillStyle = '#ff8c28'; g.beginPath(); g.ellipse(px+TS/2, py+2+fl*0.4, 4.5, 6.5,0,0,7); g.fill();
-      g.fillStyle = '#ffd97a'; g.beginPath(); g.ellipse(px+TS/2, py+3+fl*0.3, 2.4, 3.6,0,0,7); g.fill();
-      break; }
+      g.beginPath();
+      g.moveTo(jx+x1, jy+y1-6); g.lineTo(jx+x2, jy+y2-6);
+      g.lineTo(jx+x2, jy+y2-6-hj); g.lineTo(jx+x1, jy+y1-6-hj);
+      g.closePath(); g.fill();
+      g.strokeStyle = '#241708'; g.lineWidth = 1.2; g.stroke();
+      g.strokeStyle = '#59401f';
+      g.beginPath(); g.moveTo(jx+(x1+x2)/2, jy+(y1+y2)/2-6); g.lineTo(jx+(x1+x2)/2, jy+(y1+y2)/2-6-hj); g.stroke();
+    }
   }
-  // skador
+  if(b.typ==='aker'){
+    // grödor som växer med tiden
+    const vaxt = Math.min(1, b.tid/25);
+    const hh = 2+vaxt*6;
+    g.fillStyle = vaxt>0.7? '#d9b64a' : '#7fb349';
+    for(let gy=0; gy<4; gy++) for(let gx=0; gx<5; gx++){
+      const t1 = 0.14+gx*0.18, t2 = 0.16+gy*0.22;
+      const wx2 = jx + mix(0, 48, t1) - mix(0, 48, t2);
+      const wy2 = jy + mix(0, 24, t1) + mix(0, 24, t2);
+      g.fillRect(wx2, wy2-hh, 2, hh);
+    }
+  }
+  // sprickor + hp
   if(b.hp < b.maxhp*0.55 && b.typ!=='fackla'){
-    g.strokeStyle = 'rgba(20,14,8,0.75)'; g.lineWidth = 1.5;
-    g.beginPath(); g.moveTo(px+w*0.3, py+h*0.25); g.lineTo(px+w*0.45, py+h*0.5); g.lineTo(px+w*0.35, py+h*0.75); g.stroke();
-    if(b.hp < b.maxhp*0.3){ g.beginPath(); g.moveTo(px+w*0.7, py+h*0.2); g.lineTo(px+w*0.6, py+h*0.55); g.lineTo(px+w*0.75, py+h*0.8); g.stroke(); }
-  }
-  if(b.hp < b.maxhp && b.typ!=='aker'){
-    g.fillStyle = '#171017'; g.fillRect(px+2, py-8, w-4, 4);
-    g.fillStyle = b.hp<b.maxhp*0.3? '#d94f3c' : '#8fd45a';
-    g.fillRect(px+3, py-7, (w-6)*kl(b.hp/b.maxhp,0,1), 2);
+    const cx = jx + (b.def.w*12 - b.def.h*12);
+    g.strokeStyle = 'rgba(16,10,6,0.8)'; g.lineWidth = 1.4;
+    g.beginPath(); g.moveTo(cx-6, jy+4); g.lineTo(cx, jy+12); g.lineTo(cx-4, jy+20); g.stroke();
+    if(b.hp < b.maxhp*0.3){ g.beginPath(); g.moveTo(cx+8, jy+2); g.lineTo(cx+4, jy+14); g.stroke(); }
   }
   g.restore();
+  if(b.hp < b.maxhp){
+    const cx = ax + (b.def.w*12 - b.def.h*12), topp = ay - (SPR.bygg[b.typ]? SPR.bygg[b.typ].oy : 30);
+    g.fillStyle = '#171017'; g.fillRect(cx-16, topp-2, 32, 5);
+    g.fillStyle = b.hp<b.maxhp*0.3? '#d94f3c' : '#8fd45a';
+    g.fillRect(cx-15, topp-1, 30*kl(b.hp/b.maxhp,0,1), 3);
+  }
+}
+function ritaFackla(b, sx, sy){
+  g.fillStyle = '#3c2c16'; g.fillRect(sx-2, sy-20, 5, 20);
+  g.fillStyle = '#5d4426'; g.fillRect(sx-2, sy-20, 2, 20);
+  const fl = Math.sin(tid*9+b.tx*3)*2;
+  g.fillStyle = '#ff8c28';
+  g.beginPath(); g.ellipse(sx, sy-24+fl*0.4, 4.5, 7, 0, 0, 7); g.fill();
+  g.fillStyle = '#ffd97a';
+  g.beginPath(); g.ellipse(sx, sy-23+fl*0.3, 2.4, 4, 0, 0, 7); g.fill();
 }
 
-/* ---- hjältar ---- */
+/* ---- natur i djuplistan ---- */
+function ritaTallIso(tx,ty){
+  const sx = tx*24-ty*24, sy = (tx+ty)*12;
+  skugga(sx, sy+2, 11);
+  g.drawImage(SPR.tall[(brus2(tx,ty)*2)|0], sx-22, sy-52);
+}
+function ritaStenIso(tx,ty){
+  const sx = tx*24-ty*24, sy = (tx+ty)*12;
+  skugga(sx, sy+2, 12);
+  g.drawImage(SPR.sten, sx-20, sy-22);
+}
+function ritaMalmIso(tx,ty){
+  const sx = tx*24-ty*24, sy = (tx+ty)*12;
+  skugga(sx, sy+2, 12);
+  g.drawImage(SPR.malm, sx-20, sy-22);
+}
+function ritaBarIso(tx,ty){
+  const sx = tx*24-ty*24, sy = (tx+ty)*12;
+  skugga(sx, sy+2, 10);
+  g.drawImage(objHP[idx(tx,ty)]>0? SPR.bar : SPR.barTom, sx-15, sy-17);
+}
+
+/* ---- figurer: hjältar ---- */
 function ritaHjalte(h){
+  const sx = isoSX(h.x,h.y), sy = isoSY(h.x,h.y);
   const nere = h.nere>0;
   g.save();
-  g.translate(h.x, h.y);
+  g.translate(sx, sy);
   if(h.blink>0 && Math.floor(h.blink*14)%2===0) g.globalAlpha = 0.35;
-  skugga(0, 2, 9);
-  if(nere){
-    g.rotate(Math.PI/2);
-    g.globalAlpha *= 0.85;
-  }
+  skugga(0, 1, 10);
+  if(nere){ g.rotate(Math.PI/2); g.globalAlpha *= 0.85; }
   const bob = nere? 0 : Math.abs(Math.sin(h.gang*9))*2;
-  const rx = h.fx, ry = h.fy;           // riktning
-  // ben
+  const rx = h.fx>=0? 1 : -1;
+  const kant = (fn)=>{ fn(); g.strokeStyle = '#161016'; g.lineWidth = 1.3; g.stroke(); };
+  // ben + stövlar
   g.fillStyle = '#3a2c1c';
-  g.fillRect(-5, -4-bob*0.3, 4, 7); g.fillRect(1, -4-bob*0.3+ (nere?0:Math.sin(h.gang*9)*1.6), 4, 7);
-  // kropp (tunika i hjältens färg)
-  g.fillStyle = h.ch.farg;
-  g.fillRect(-7, -16-bob, 14, 13);
-  g.fillStyle = 'rgba(0,0,0,0.22)'; g.fillRect(-7, -7-bob, 14, 4);
-  // bälte
+  g.fillRect(-5, -5-bob*0.3, 4, 7); g.fillRect(1, -5-bob*0.3+(nere?0:Math.sin(h.gang*9)*1.6), 4, 7);
+  g.fillStyle = '#241a10'; g.fillRect(-6, 0, 6, 3); g.fillRect(1, 0+(nere?0:Math.sin(h.gang*9)*1.6), 6, 3);
+  // tunika med skuggning
+  kant(()=>{ g.fillStyle = h.ch.farg; g.beginPath(); g.rect(-7, -17-bob, 14, 13); g.fill(); });
+  g.fillStyle = 'rgba(255,255,255,0.25)'; g.fillRect(-7, -17-bob, 4, 13);
+  g.fillStyle = 'rgba(0,0,0,0.28)'; g.fillRect(3, -17-bob, 4, 13);
   g.fillStyle = '#59401f'; g.fillRect(-7, -8-bob, 14, 2);
+  g.fillStyle = '#c89334'; g.fillRect(-1, -8-bob, 3, 2);
   // huvud
-  g.fillStyle = '#d8a877'; g.fillRect(-5, -26-bob, 10, 10);
-  // frisyr/hjälm per hjälte
+  kant(()=>{ g.fillStyle = '#d8a877'; g.beginPath(); g.rect(-5, -27-bob, 10, 10); g.fill(); });
+  g.fillStyle = 'rgba(255,255,255,0.2)'; g.fillRect(-5, -27-bob, 3, 10);
   const k = h.ch.id;
-  if(k==='sigrid'){ g.fillStyle = '#b8b8c2'; g.fillRect(-6,-28-bob,12,5);
-    g.fillStyle = '#efe6d0'; g.beginPath(); g.moveTo(-6,-26-bob); g.lineTo(-10,-31-bob); g.lineTo(-5,-28-bob); g.closePath(); g.fill();
-    g.beginPath(); g.moveTo(6,-26-bob); g.lineTo(10,-31-bob); g.lineTo(5,-28-bob); g.closePath(); g.fill(); }
-  if(k==='torbjorn'){ g.fillStyle = '#a8562c'; g.fillRect(-5,-19-bob,10,4); g.fillRect(-4,-28-bob,8,3); }
-  if(k==='ylva'){ g.fillStyle = '#3d5a3a'; g.beginPath(); g.moveTo(-6,-24-bob); g.lineTo(0,-32-bob); g.lineTo(6,-24-bob); g.closePath(); g.fill(); }
-  if(k==='rune'){ g.fillStyle = '#8a8a90'; g.fillRect(-5,-19-bob,10,3); g.fillStyle='#59401f'; g.fillRect(-6,-13-bob,12,8); }
-  if(k==='embla'){ g.fillStyle = '#e8c86a'; g.fillRect(-6,-28-bob,12,4); g.fillRect(-7,-25-bob,3,9); g.fillRect(4,-25-bob,3,9); }
-  // ögon åt hållet man tittar
+  if(k==='sigrid'){ g.fillStyle = '#b8b8c2'; g.fillRect(-6,-29-bob,12,5);
+    g.fillStyle = '#dcdce4'; g.fillRect(-6,-29-bob,12,2);
+    g.fillStyle = '#efe6d0';
+    g.beginPath(); g.moveTo(-6,-27-bob); g.lineTo(-11,-33-bob); g.lineTo(-5,-29-bob); g.closePath(); g.fill();
+    g.beginPath(); g.moveTo(6,-27-bob); g.lineTo(11,-33-bob); g.lineTo(5,-29-bob); g.closePath(); g.fill(); }
+  if(k==='torbjorn'){ g.fillStyle = '#a8562c'; g.fillRect(-5,-20-bob,10,4); g.fillRect(-4,-29-bob,8,3);
+    g.fillStyle = '#c46a38'; g.fillRect(-5,-20-bob,10,1); }
+  if(k==='ylva'){ g.fillStyle = '#3d5a3a';
+    g.beginPath(); g.moveTo(-6,-25-bob); g.lineTo(0,-33-bob); g.lineTo(6,-25-bob); g.closePath(); g.fill();
+    g.strokeStyle = '#22331f'; g.lineWidth = 1; g.stroke(); }
+  if(k==='rune'){ g.fillStyle = '#8a8a90'; g.fillRect(-5,-20-bob,10,3);
+    g.fillStyle = '#59401f'; g.fillRect(-6,-14-bob,12,8);
+    g.fillStyle = '#6f5228'; g.fillRect(-6,-14-bob,12,2); }
+  if(k==='embla'){ g.fillStyle = '#e8c86a'; g.fillRect(-6,-29-bob,12,4); g.fillRect(-7,-26-bob,3,10); g.fillRect(4,-26-bob,3,10);
+    g.fillStyle = '#f4dc94'; g.fillRect(-6,-29-bob,12,1); }
+  // ögon
   g.fillStyle = '#241a10';
-  g.fillRect(-3+rx*2, -23-bob, 2, 2); g.fillRect(2+rx*2, -23-bob, 2, 2);
-  // vapen — svingas vid attack
+  g.fillRect(-3+rx*1.5, -24-bob, 2, 2); g.fillRect(2+rx*1.5, -24-bob, 2, 2);
+  // vapen
   const sving = h.atkT>0 ? Math.sin((1-h.atkT/h.atkMax)*Math.PI)*1.6 : 0;
   g.save();
-  g.translate(rx>=0? 8 : -8, -13-bob);
-  g.rotate((rx>=0?1:-1) * (0.5 - sving));
+  g.translate(rx>=0? 8 : -8, -14-bob);
+  g.rotate(rx * (0.5 - sving));
   const vap = h.ch.vapen;
-  if(vap==='svard'){ g.fillStyle = '#c9c9d4'; g.fillRect(-1.5, -16, 3, 15); g.fillStyle = '#c89334'; g.fillRect(-4, -2, 8, 3); }
-  if(vap==='yxa'){ g.fillStyle = '#7a5c38'; g.fillRect(-1.5, -15, 3, 15); g.fillStyle = '#b8b8c2';
-    g.beginPath(); g.moveTo(-1,-15); g.quadraticCurveTo(-9,-13,-8,-6); g.lineTo(-1,-9); g.closePath(); g.fill(); }
-  if(vap==='bage'){ g.strokeStyle = '#7a5c38'; g.lineWidth = 2.5;
+  g.strokeStyle = '#161016'; g.lineWidth = 1.2;
+  if(vap==='svard'){ g.fillStyle = '#c9c9d4'; g.fillRect(-1.5,-16,3,15); g.strokeRect(-1.5,-16,3,15);
+    g.fillStyle = '#eeeef4'; g.fillRect(-1.5,-16,1,15);
+    g.fillStyle = '#c89334'; g.fillRect(-4,-2,8,3); }
+  if(vap==='yxa'){ g.fillStyle = '#7a5c38'; g.fillRect(-1.5,-15,3,15);
+    g.fillStyle = '#b8b8c2'; g.beginPath(); g.moveTo(-1,-15); g.quadraticCurveTo(-10,-13,-9,-5); g.lineTo(-1,-9); g.closePath(); g.fill(); g.stroke();
+    g.fillStyle = '#dcdce4'; g.fillRect(-8,-12,3,2); }
+  if(vap==='bage'){ g.strokeStyle = '#7a5c38'; g.lineWidth = 2.6;
     g.beginPath(); g.arc(0,-6, 9, -1.2, 1.2); g.stroke();
     g.strokeStyle = '#e8e0cc'; g.lineWidth = 1;
     g.beginPath(); g.moveTo(Math.cos(-1.2)*9, -6+Math.sin(-1.2)*9); g.lineTo(Math.cos(1.2)*9, -6+Math.sin(1.2)*9); g.stroke(); }
-  if(vap==='slagga'){ g.fillStyle = '#7a5c38'; g.fillRect(-1.5,-14,3,14); g.fillStyle = '#6f6f78'; g.fillRect(-6,-18,12,7); }
-  if(vap==='stav'){ g.fillStyle = '#5d4426'; g.fillRect(-1.5,-18,3,18); g.fillStyle = '#8fd4ff';
-    g.beginPath(); g.arc(0,-19,3.4,0,7); g.fill(); }
+  if(vap==='slagga'){ g.fillStyle = '#7a5c38'; g.fillRect(-1.5,-14,3,14);
+    g.fillStyle = '#6f6f78'; g.fillRect(-6,-19,12,7); g.strokeRect(-6,-19,12,7);
+    g.fillStyle = '#94949c'; g.fillRect(-6,-19,12,2); }
+  if(vap==='stav'){ g.fillStyle = '#5d4426'; g.fillRect(-1.5,-18,3,18);
+    g.fillStyle = '#8fd4ff'; g.beginPath(); g.arc(0,-19,3.6,0,7); g.fill(); g.stroke();
+    g.fillStyle = '#d8f0ff'; g.fillRect(-1,-21,2,2); }
   g.restore();
-  if(nere){
-    utext('!', 0, -34, 13, '#d94f3c');
-  }
+  if(nere) utext('!', 0, -36, 13, '#d94f3c');
   g.restore();
-  // namn + återupplivningsring
-  utext(h.ch.namn, h.x, h.y-36, 9, h.ch.farg);
+  utext(h.ch.namn, sx, sy-38, 9, h.ch.farg);
   if(nere && h.revP>0){
     g.strokeStyle = '#8fd45a'; g.lineWidth = 3;
-    g.beginPath(); g.arc(h.x, h.y, 14, -Math.PI/2, -Math.PI/2 + h.revP*Math.PI*2); g.stroke();
+    g.beginPath(); g.arc(sx, sy, 14, -Math.PI/2, -Math.PI/2 + h.revP*Math.PI*2); g.stroke();
   }
 }
 
-/* ---- bybor ---- */
+/* ---- figurer: bybor ---- */
 const JOBBFARG = { ved:'#5da13e', sten:'#8b8b93', malm:'#e8a13c', mat:'#d9b64a' };
 function ritaFolk(f){
   if(f.gomd) return;
-  g.save(); g.translate(f.x, f.y);
-  skugga(0,1,6);
+  const sx = isoSX(f.x,f.y), sy = isoSY(f.x,f.y);
+  g.save(); g.translate(sx, sy);
+  skugga(0,1,7);
   const bob = Math.abs(Math.sin(f.gang*10))*1.4;
   const arb = f.arbT>0 ? Math.sin(tid*13)*2 : 0;
   g.fillStyle = '#3a2c1c'; g.fillRect(-3,-3,3,4); g.fillRect(1,-3,3,4);
-  g.fillStyle = '#7a6544'; g.fillRect(-5,-12-bob,10,10);
-  g.fillStyle = '#d8a877'; g.fillRect(-3.5,-19-bob,7,7);
+  g.fillStyle = '#7a6544'; g.fillRect(-5,-13-bob,10,10);
+  g.strokeStyle = '#161016'; g.lineWidth = 1.1; g.strokeRect(-5,-13-bob,10,10);
+  g.fillStyle = 'rgba(255,255,255,0.18)'; g.fillRect(-5,-13-bob,3,10);
+  g.fillStyle = '#d8a877'; g.fillRect(-3.5,-20-bob,7,7);
   const hf = f.jobb? JOBBFARG[f.jobb] : '#a89e88';
   g.fillStyle = hf;
-  g.beginPath(); g.moveTo(-4.5,-18-bob); g.lineTo(0,-24-bob-arb*0.4); g.lineTo(4.5,-18-bob); g.closePath(); g.fill();
+  g.beginPath(); g.moveTo(-4.5,-19-bob); g.lineTo(0,-25-bob-arb*0.4); g.lineTo(4.5,-19-bob); g.closePath(); g.fill();
+  g.strokeStyle = '#161016'; g.lineWidth = 1; g.stroke();
   if(f.arbT>0){
-    g.fillStyle = '#7a5c38'; g.save(); g.translate(6,-10-bob); g.rotate(0.6+arb*0.3); g.fillRect(-1,-8,2,9); g.restore();
+    g.fillStyle = '#7a5c38'; g.save(); g.translate(6,-11-bob); g.rotate(0.6+arb*0.3); g.fillRect(-1,-8,2,9); g.restore();
   }
   if(f.barN>0){
     const bf = {tra:'#8a6337', sten:'#8b8b93', jarn:'#e8a13c', mat:'#d9b64a'}[f.bar]||'#fff';
-    g.fillStyle = bf; g.fillRect(-4,-27-bob,8,5);
-    g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(-4,-24-bob,8,2);
+    g.fillStyle = bf; g.fillRect(-4,-28-bob,8,5);
+    g.strokeStyle = '#161016'; g.strokeRect(-4,-28-bob,8,5);
   }
   g.restore();
 }
 
-/* ---- vättar & troll ---- */
+/* ---- figurer: vättar & troll ---- */
 function ritaMob(m){
-  g.save(); g.translate(m.x, m.y);
+  const sx = isoSX(m.x,m.y), sy = isoSY(m.x,m.y);
+  g.save(); g.translate(sx, sy);
   const st = m.stenad, kind = m.slag;
-  const kropp = st>0? '#8a8a90' : m.def.farg;
+  const kropp2 = st>0? '#8a8a90' : m.def.farg;
   const mork = st>0? '#5c5c64' : m.def.morkFarg;
-  const hopp = kind==='gast'? Math.sin(tid*3+m.x*0.02)*3-6 : 0;
-  if(kind!=='gast') skugga(0, 2, m.def.r*0.9);
+  const hopp = kind==='gast'? Math.sin(tid*3+m.x*0.02)*3-8 : 0;
+  if(kind!=='gast') skugga(0, 1, m.def.r*1.05);
   if(kind==='gast') g.globalAlpha = 0.62+0.15*Math.sin(tid*4);
   g.translate(0, hopp);
   const r = m.def.r, gs = Math.sin(m.gang*11)*0.12;
+  const kant = ()=>{ g.strokeStyle = st>0? '#3a3a42' : '#131810'; g.lineWidth = 1.3; g.stroke(); };
   if(kind==='kung'){
-    // Bergakungen — jättetroll av sten
-    g.fillStyle = mork; g.beginPath(); g.ellipse(0,-r*0.9, r*1.05, r*1.15+gs*6, 0,0,7); g.fill();
-    g.fillStyle = kropp; g.beginPath(); g.ellipse(0,-r, r*0.92, r+gs*6, 0,0,7); g.fill();
+    g.fillStyle = mork; g.beginPath(); g.ellipse(0,-r*0.9, r*1.05, r*1.15+gs*6, 0,0,7); g.fill(); kant();
+    g.fillStyle = kropp2; g.beginPath(); g.ellipse(-r*0.15,-r*1.05, r*0.8, r*0.92+gs*6, 0,0,7); g.fill();
     g.fillStyle = '#5c7040';
     g.beginPath(); g.ellipse(-r*0.4,-r*1.5, r*0.34, r*0.2, -0.4,0,7); g.fill();
     g.beginPath(); g.ellipse(r*0.35,-r*0.6, r*0.3, r*0.18, 0.5,0,7); g.fill();
-    // armar
-    g.fillStyle = kropp;
-    g.beginPath(); g.ellipse(-r*1.05, -r*0.7+gs*8, r*0.34, r*0.62, 0.25,0,7); g.fill();
-    g.beginPath(); g.ellipse(r*1.05, -r*0.7-gs*8, r*0.34, r*0.62, -0.25,0,7); g.fill();
-    // stenkrona
+    g.fillStyle = kropp2;
+    g.beginPath(); g.ellipse(-r*1.05, -r*0.7+gs*8, r*0.34, r*0.62, 0.25,0,7); g.fill(); kant();
+    g.beginPath(); g.ellipse(r*1.05, -r*0.7-gs*8, r*0.34, r*0.62, -0.25,0,7); g.fill(); kant();
     g.fillStyle = '#6f6f78';
     for(let i=-2;i<=2;i++){
-      g.beginPath(); g.moveTo(i*r*0.3-r*0.12, -r*1.8); g.lineTo(i*r*0.3, -r*2.25-Math.abs(i)*-r*0.06); g.lineTo(i*r*0.3+r*0.12, -r*1.8); g.closePath(); g.fill();
+      g.beginPath(); g.moveTo(i*r*0.3-r*0.12, -r*1.8); g.lineTo(i*r*0.3, -r*2.25); g.lineTo(i*r*0.3+r*0.12, -r*1.8); g.closePath(); g.fill(); kant();
     }
-    // ögon
     g.fillStyle = st>0? '#5c5c64' : '#ffb03c';
     g.fillRect(-r*0.4, -r*1.45, r*0.22, r*0.14); g.fillRect(r*0.18, -r*1.45, r*0.22, r*0.14);
-    // betar
     g.fillStyle = '#efe6d0';
     g.fillRect(-r*0.3, -r*0.95, r*0.12, r*0.2); g.fillRect(r*0.2, -r*0.95, r*0.12, r*0.2);
   } else {
     const langd = kind==='troll'? 1.25 : 1;
-    // kropp
-    g.fillStyle = mork; g.beginPath(); g.ellipse(0, -r*0.85, r*1.02, r*1.02*langd+gs*4, 0,0,7); g.fill();
-    g.fillStyle = kropp; g.beginPath(); g.ellipse(0, -r*0.9, r*0.9, r*0.92*langd+gs*4, 0,0,7); g.fill();
+    g.fillStyle = mork; g.beginPath(); g.ellipse(0, -r*0.85, r*1.02, r*1.02*langd+gs*4, 0,0,7); g.fill(); kant();
+    g.fillStyle = kropp2; g.beginPath(); g.ellipse(-r*0.12, -r*0.95, r*0.78, r*0.85*langd+gs*4, 0,0,7); g.fill();
+    // mage
+    g.fillStyle = 'rgba(255,255,240,0.16)';
+    g.beginPath(); g.ellipse(-r*0.1, -r*0.6, r*0.4, r*0.4, 0,0,7); g.fill();
     // öron
-    g.fillStyle = kropp;
-    g.beginPath(); g.moveTo(-r*0.5,-r*1.4); g.lineTo(-r*1.15,-r*1.9); g.lineTo(-r*0.25,-r*1.65); g.closePath(); g.fill();
-    g.beginPath(); g.moveTo(r*0.5,-r*1.4); g.lineTo(r*1.15,-r*1.9); g.lineTo(r*0.25,-r*1.65); g.closePath(); g.fill();
-    // ögon (glöder i mörkret)
+    g.fillStyle = kropp2;
+    g.beginPath(); g.moveTo(-r*0.5,-r*1.4); g.lineTo(-r*1.15,-r*1.95); g.lineTo(-r*0.25,-r*1.65); g.closePath(); g.fill(); kant();
+    g.beginPath(); g.moveTo(r*0.5,-r*1.4); g.lineTo(r*1.15,-r*1.95); g.lineTo(r*0.25,-r*1.65); g.closePath(); g.fill(); kant();
     g.fillStyle = st>0? '#5c5c64' : (SPEL.fas==='dag'? '#241a10' : m.def.ogon||'#ffd97a');
-    const ox = (m.vx||0)>0? 1.5 : (m.vx||0)<0? -1.5 : 0;
-    g.fillRect(-r*0.42+ox, -r*1.1, r*0.26, r*0.2); g.fillRect(r*0.16+ox, -r*1.1, r*0.26, r*0.2);
-    // detaljer per sort
+    const ox2 = (m.vx||0)>0? 1.5 : (m.vx||0)<0? -1.5 : 0;
+    g.fillRect(-r*0.42+ox2, -r*1.1, r*0.26, r*0.2); g.fillRect(r*0.16+ox2, -r*1.1, r*0.26, r*0.2);
     if(kind==='troll'){
       g.fillStyle = '#efe6d0'; g.fillRect(-r*0.32,-r*0.55,r*0.14,r*0.24); g.fillRect(r*0.2,-r*0.55,r*0.14,r*0.24);
       g.fillStyle = '#5d4426';
-      g.save(); g.rotate(0.5+gs*2); g.fillRect(r*0.7, -r*1.6, r*0.34, r*1.5); g.restore();
+      g.save(); g.rotate(0.5+gs*2); g.fillRect(r*0.7, -r*1.6, r*0.34, r*1.5);
+      g.strokeStyle = '#241708'; g.lineWidth = 1.2; g.strokeRect(r*0.7, -r*1.6, r*0.34, r*1.5); g.restore();
       g.fillStyle = '#5c7040'; g.beginPath(); g.ellipse(-r*0.3,-r*1.55, r*0.3, r*0.16, -0.3,0,7); g.fill();
     }
     if(kind==='kastare'){
-      g.fillStyle = '#8b8b93'; g.beginPath(); g.arc(r*0.75, -r*1.7+gs*5, r*0.42, 0, 7); g.fill();
+      g.fillStyle = '#8b8b93'; g.beginPath(); g.arc(r*0.75, -r*1.75+gs*5, r*0.42, 0, 7); g.fill(); kant();
     }
     if(kind==='eld'){
       const fl = Math.sin(tid*10+m.x)*1.5;
-      g.fillStyle = '#ffd97a'; g.beginPath(); g.ellipse(0,-r*1.75+fl*0.4, r*0.3, r*0.5,0,0,7); g.fill();
-      g.fillStyle = '#ff8c28'; g.beginPath(); g.ellipse(0,-r*1.7+fl*0.3, r*0.18, r*0.3,0,0,7); g.fill();
+      g.fillStyle = '#ffd97a'; g.beginPath(); g.ellipse(0,-r*1.8+fl*0.4, r*0.3, r*0.5,0,0,7); g.fill();
+      g.fillStyle = '#ff8c28'; g.beginPath(); g.ellipse(0,-r*1.75+fl*0.3, r*0.18, r*0.3,0,0,7); g.fill();
     }
     if(kind==='gast'){
-      g.fillStyle = kropp;
+      g.fillStyle = kropp2;
       g.beginPath(); g.moveTo(-r*0.8,-r*0.3); g.quadraticCurveTo(-r*0.3, r*0.5, 0, -r*0.1);
       g.quadraticCurveTo(r*0.3, r*0.5, r*0.8, -r*0.3); g.closePath(); g.fill();
     }
     if(m.elit){ g.fillStyle = '#d94f3c'; g.fillRect(-r*0.6, -r*1.55, r*1.2, r*0.16); }
   }
-  // sprickor när de förstenas
   if(st>0.25){
-    g.strokeStyle = 'rgba(30,30,36,0.8)'; g.lineWidth = 1.4;
+    g.strokeStyle = 'rgba(30,30,36,0.85)'; g.lineWidth = 1.4;
     g.beginPath(); g.moveTo(-m.def.r*0.5,-m.def.r*1.3); g.lineTo(-m.def.r*0.1,-m.def.r*0.8); g.lineTo(-m.def.r*0.4,-m.def.r*0.3); g.stroke();
     if(st>0.6){ g.beginPath(); g.moveTo(m.def.r*0.4,-m.def.r*1.4); g.lineTo(m.def.r*0.15,-m.def.r*0.7); g.stroke(); }
   }
   g.restore();
-  // hp-mätare
   if(m.hp < m.maxhp && !m.stenad){
     const w = m.slag==='kung'? 60 : 20;
-    g.fillStyle = '#171017'; g.fillRect(m.x-w/2, m.y-m.def.r*2.4-8, w, 4);
+    g.fillStyle = '#171017'; g.fillRect(sx-w/2, sy-m.def.r*2.4-10, w, 4);
     g.fillStyle = m.slag==='kung'? '#ffb03c':'#d94f3c';
-    g.fillRect(m.x-w/2+1, m.y-m.def.r*2.4-7, (w-2)*kl(m.hp/m.maxhp,0,1), 2);
+    g.fillRect(sx-w/2+1, sy-m.def.r*2.4-9, (w-2)*kl(m.hp/m.maxhp,0,1), 2);
   }
 }
 
 /* ---- projektiler & partiklar ---- */
 function ritaPil(p){
-  g.save(); g.translate(p.x,p.y);
+  const sx = isoSX(p.x,p.y), sy = isoSY(p.x,p.y) - (p.typ==='rock'? (p.h||0) : 10);
+  g.save(); g.translate(sx,sy);
   if(p.typ==='rock'){
     g.rotate(tid*7);
-    g.fillStyle = '#6f6f78'; g.beginPath(); g.arc(0,0,5,0,7); g.fill();
-    g.fillStyle = '#8b8b93'; g.beginPath(); g.arc(-1,-1,2.4,0,7); g.fill();
+    g.fillStyle = '#5a5a63'; g.beginPath(); g.arc(1,1,5.4,0,7); g.fill();
+    g.fillStyle = '#8b8b93'; g.beginPath(); g.arc(0,0,5,0,7); g.fill();
+    g.fillStyle = '#aeaeb6'; g.beginPath(); g.arc(-1.4,-1.4,2.2,0,7); g.fill();
   } else {
-    g.rotate(Math.atan2(p.vy,p.vx));
-    g.strokeStyle = '#7a5c38'; g.lineWidth = 2;
+    g.rotate(Math.atan2((p.vx+p.vy)/2, p.vx-p.vy));
+    g.strokeStyle = '#161016'; g.lineWidth = 3.4;
+    g.beginPath(); g.moveTo(-6,0); g.lineTo(5,0); g.stroke();
+    g.strokeStyle = '#a8895c'; g.lineWidth = 2;
     g.beginPath(); g.moveTo(-6,0); g.lineTo(4,0); g.stroke();
-    g.fillStyle = '#c9c9d4'; g.beginPath(); g.moveTo(7,0); g.lineTo(2,-2.4); g.lineTo(2,2.4); g.closePath(); g.fill();
-    g.fillStyle = '#efe6d0'; g.fillRect(-7,-1.6,3,3.2);
+    g.fillStyle = '#c9c9d4'; g.beginPath(); g.moveTo(8,0); g.lineTo(2,-2.6); g.lineTo(2,2.6); g.closePath(); g.fill();
+    g.fillStyle = '#efe6d0'; g.fillRect(-7,-1.8,3,3.6);
   }
   g.restore();
 }
 function ritaPartiklar(){
   for(const p of partiklar){
+    const sx = isoSX(p.x,p.y), sy = isoSY(p.x,p.y) - (p.z||0) - 5;
     g.globalAlpha = kl(p.liv/(p.rok?1.4:0.6),0,1)*(p.rok?0.5:1);
     g.fillStyle = p.farg;
-    g.fillRect(p.x-p.st/2, p.y-p.st/2, p.st, p.st);
+    g.fillRect(sx-p.st/2, sy-p.st/2, p.st, p.st);
   }
   g.globalAlpha = 1;
 }
@@ -1209,13 +1550,16 @@ function morkerNiva(){
   if(SPEL.fas==='gryning') return kl(0.76*(1-SPEL.klocka/6), 0, 1);
   return 0;
 }
-function ljuscirkel(x,y,r,varm){
-  const sx = x-kamX, sy = y-kamY;
+function ljuscirkel(wx,wy,r,lyft){
+  const sx = isoSX(wx,wy)-kamX, sy = isoSY(wx,wy)-kamY-(lyft||0);
   if(sx<-r||sy<-r||sx>VIEW_W+r||sy>VIEW_H+r) return;
-  const gr = mg.createRadialGradient(sx,sy,r*0.15,sx,sy,r);
+  mg.save();
+  mg.translate(sx,sy); mg.scale(1,0.6);
+  const gr = mg.createRadialGradient(0,0,r*0.15,0,0,r);
   gr.addColorStop(0,'rgba(0,0,0,1)'); gr.addColorStop(1,'rgba(0,0,0,0)');
   mg.fillStyle = gr;
-  mg.fillRect(sx-r,sy-r,r*2,r*2);
+  mg.fillRect(-r,-r,r*2,r*2);
+  mg.restore();
 }
 function ritaMorker(){
   const niv = morkerNiva();
@@ -1225,23 +1569,28 @@ function ritaMorker(){
   mg.fillStyle = 'rgba(9,10,34,'+niv+')';
   mg.fillRect(0,0,VIEW_W,VIEW_H);
   mg.globalCompositeOperation = 'destination-out';
-  for(const h of hjaltar) if(h.nere<=0) ljuscirkel(h.x, h.y-10, 82);
+  for(const h of hjaltar) if(h.nere<=0) ljuscirkel(h.x, h.y, 92, 12);
   for(const b of byggnader){
     if(!b) continue;
     const cx = (b.tx+b.def.w/2)*TS, cy = (b.ty+b.def.h/2)*TS;
-    if(b.typ==='fackla') ljuscirkel(cx, cy-6, 105+Math.sin(tid*8+b.tx*2)*7);
-    else if(b.typ==='langhus') ljuscirkel(cx, cy, 120);
-    else if(b.typ==='smedja') ljuscirkel(cx, cy, 70);
-    else if(b.typ==='torn') ljuscirkel(cx, cy-16, 58);
-    else if(b.typ==='stuga'||b.typ==='koja'||b.typ==='brott'||b.typ==='gruva') ljuscirkel(cx, cy, 42);
+    if(b.typ==='fackla') ljuscirkel(cx, cy, 115+Math.sin(tid*8+b.tx*2)*7, 18);
+    else if(b.typ==='langhus') ljuscirkel(cx, cy, 130, 20);
+    else if(b.typ==='smedja') ljuscirkel(cx, cy, 78, 14);
+    else if(b.typ==='torn') ljuscirkel(cx, cy, 62, 50);
+    else if(b.typ==='stuga'||b.typ==='koja'||b.typ==='brott'||b.typ==='gruva') ljuscirkel(cx, cy, 46, 12);
   }
-  for(const m of mobbar) if(m.slag==='eld') ljuscirkel(m.x, m.y-8, 55);
+  for(const m of mobbar) if(m.slag==='eld') ljuscirkel(m.x, m.y, 58, 8);
   g.drawImage(morkDuk, kamX, kamY);
 }
+
+/* ---- baka allt vid uppstart ---- */
+bakaTiles();
+bakaNatur();
+bakaBygg();
 </script>
 <script>
 'use strict';
-/* ===================== HUD, MENYER & SKÄRMAR ===================== */
+/* ===================== HUD, MENYER & SKÄRMAR (iso) ===================== */
 function ritaIkon(slag,x,y,s){
   s = s||1;
   g.save(); g.translate(x,y); g.scale(s,s);
@@ -1268,7 +1617,7 @@ function ritaPanel(x,y,w,h){
   g.strokeStyle = '#8a6337'; g.lineWidth = 2; g.strokeRect(x+1,y+1,w-2,h-2);
 }
 
-/* ---- minikartan ---- */
+/* ---- minikartan (rak ovanifrån — kartan i handen) ---- */
 const miniDuk = document.createElement('canvas');
 miniDuk.width = MAPW; miniDuk.height = MAPH;
 const mig = miniDuk.getContext('2d');
@@ -1300,8 +1649,14 @@ function ritaMini(){
   for(const f of folket) if(!f.gomd){ g.fillStyle = '#efe6d0'; g.fillRect(mx+f.x/TS*sx-0.7, my+f.y/TS*sy-0.7, 1.6, 1.6); }
   for(const m of mobbar){ g.fillStyle = m.slag==='kung'? '#ff6a3c':'#d94f3c'; const s2 = m.slag==='kung'?4:2.2; g.fillRect(mx+m.x/TS*sx-s2/2, my+m.y/TS*sy-s2/2, s2, s2); }
   for(const h of hjaltar){ g.fillStyle = h.ch.farg; g.fillRect(mx+h.x/TS*sx-1.4, my+h.y/TS*sy-1.4, 3, 3); }
+  // synfältet (iso-vyn blir en romb på kartan)
+  const horn = [[kamX,kamY],[kamX+VIEW_W,kamY],[kamX+VIEW_W,kamY+VIEW_H],[kamX,kamY+VIEW_H]]
+    .map(p=>isoInv(p[0],p[1]));
   g.strokeStyle = 'rgba(239,230,208,0.7)'; g.lineWidth = 1;
-  g.strokeRect(mx+kamX/TS*sx, my+kamY/TS*sy, VIEW_W/TS*sx, VIEW_H/TS*sy);
+  g.beginPath();
+  horn.forEach((p,i)=>{ const px2 = mx+kl(p[0]/TS,0,MAPW)*sx, py2 = my+kl(p[1]/TS,0,MAPH)*sy;
+    if(i===0) g.moveTo(px2,py2); else g.lineTo(px2,py2); });
+  g.closePath(); g.stroke();
   // varningspilar där nästa våg kommer
   if(SPEL.fas==='natt' || (SPEL.fas==='dag' && SPEL.tidKvar<12)){
     for(const kant of SPEL.natt.kanter||[]){
@@ -1317,14 +1672,12 @@ function ritaMini(){
 
 /* ---- övre HUD ---- */
 function ritaHUD(){
-  // resurser
   ritaPanel(8,8,236,30);
   const rr = [['tra',RES.tra],['sten',RES.sten],['mat',RES.mat],['jarn',RES.jarn]];
   rr.forEach((p,i)=>{
     ritaIkon(p[0], 26+i*58, 23, 0.95);
     utext(''+Math.floor(p[1]), 44+i*58, 23, 13, '#efe6d0', 'left');
   });
-  // dag & klocka
   ritaPanel(VIEW_W/2-86, 8, 172, 34);
   utext('DAG '+SPEL.dag, VIEW_W/2-46, 25, 15, '#ffd97a');
   const cx = VIEW_W/2+18, cy = 34;
@@ -1348,7 +1701,6 @@ function ritaHUD(){
   } else if(SPEL.tidKvar<12 && SPEL.lage==='spel'){
     if(Math.sin(tid*7)>0) utext('NATTEN KOMMER!', VIEW_W/2, 56, 15, '#ff6a3c');
   }
-  // bybor + Långhusets hälsa
   ritaPanel(VIEW_W-198, 8, 190, 30);
   ritaIkon('folk', VIEW_W-180, 23, 1);
   utext(folket.length+'/'+folkTak(), VIEW_W-166, 23, 13, '#efe6d0', 'left');
@@ -1359,7 +1711,6 @@ function ritaHUD(){
     g.fillStyle = lh.hp<lh.maxhp*0.3? '#d94f3c' : '#8fd45a';
     g.fillRect(VIEW_W-100, 19, 82*kl(lh.hp/lh.maxhp,0,1), 8);
   }
-  // hjältekort nere till vänster
   hjaltar.forEach((h,i)=>{
     const hx = 8, hy = VIEW_H-34-(hjaltar.length-1-i)*30;
     ritaPanel(hx,hy,164,26);
@@ -1369,7 +1720,6 @@ function ritaHUD(){
     g.fillStyle = '#171017'; g.fillRect(hx+26, hy+16, 64, 7);
     g.fillStyle = h.hp<h.maxhp*0.3? '#d94f3c':'#8fd45a';
     g.fillRect(hx+27, hy+17, 62*kl(h.hp/h.maxhp,0,1), 5);
-    // kraftmätare
     g.fillStyle = '#171017'; g.fillRect(hx+96, hy+16, 40, 7);
     g.fillStyle = h.kraftCd<=0? '#8fd4ff':'#3f5a70';
     g.fillRect(hx+97, hy+17, 38*(1-kl(h.kraftCd/h.kraftMax,0,1)), 5);
@@ -1380,20 +1730,24 @@ function ritaHUD(){
   ritaMini();
 }
 
-/* ---- byggläge (spöke + panel över hjälten, i världskoordinater) ---- */
+/* ---- byggläge: iso-spöke + panel över hjälten ---- */
 function ritaByggUI(h){
   const val = BYGGLISTA[h.bySel], def = BTYP[val];
   const [gx,gy] = byggRuta(h);
   const ok = kanBygga(val,gx,gy) && harRad(def.kost);
-  // spökbyggnad
-  g.globalAlpha = 0.5;
+  // spökets fotavtryck som iso-romb
+  const T = [gx*24-gy*24, (gx+gy)*12];
+  const R = [(gx+def.w)*24-gy*24, (gx+def.w+gy)*12];
+  const B = [(gx+def.w)*24-(gy+def.h)*24, (gx+def.w+gy+def.h)*12];
+  const L = [gx*24-(gy+def.h)*24, (gx+gy+def.h)*12];
+  g.globalAlpha = 0.42;
   g.fillStyle = ok? '#8fd45a':'#d94f3c';
-  g.fillRect(gx*TS, gy*TS, def.w*TS, def.h*TS);
+  g.beginPath(); g.moveTo(T[0],T[1]); g.lineTo(R[0],R[1]); g.lineTo(B[0],B[1]); g.lineTo(L[0],L[1]); g.closePath(); g.fill();
   g.globalAlpha = 1;
   g.strokeStyle = ok? '#8fd45a':'#d94f3c'; g.lineWidth = 2;
-  g.strokeRect(gx*TS+1, gy*TS+1, def.w*TS-2, def.h*TS-2);
-  // panel
-  const px = h.x, py = h.y-66;
+  g.beginPath(); g.moveTo(T[0],T[1]); g.lineTo(R[0],R[1]); g.lineTo(B[0],B[1]); g.lineTo(L[0],L[1]); g.closePath(); g.stroke();
+  // panel över hjälten
+  const px = isoSX(h.x,h.y), py = isoSY(h.x,h.y)-70;
   ritaPanel(px-92, py-16, 184, 44);
   utext('◄ '+def.namn+' ►', px, py-4, 13, '#ffd97a');
   let kx = px - 30*(Object.keys(def.kost).length) + 26;
@@ -1405,32 +1759,35 @@ function ritaByggUI(h){
   if(Object.keys(def.kost).length===0) utext(def.info, px, py+16, 10, '#a89e88');
 }
 
-/* ---- smedjans disk (världskoordinater) ---- */
+/* ---- smedjans disk (förankrad vid smedjans iso-läge) ---- */
 const SMIDESLISTA = [
   {ny:'yxor',   namn:'Yxor',    kost:[3,6], info:'Samla snabbare'},
   {ny:'pilar',  namn:'Pilar',   kost:[4,7], info:'Tornen vässas'},
   {ny:'vapen',  namn:'Vapen',   kost:[5,8], info:'Slå hårdare'},
   {ny:'brynjor',namn:'Brynjor', kost:[5,8], info:'+30 liv'},
 ];
+function smedjeAnkare(sm){
+  const cwx = (sm.tx+sm.def.w/2)*TS, cwy = (sm.ty+sm.def.h/2)*TS;
+  return [isoSX(cwx,cwy), isoSY(cwx,cwy)-78];
+}
 function ritaSmedjeUI(sm){
-  const cx = (sm.tx+sm.def.w/2)*TS, topY = sm.ty*TS-46;
+  const [cx, topY] = smedjeAnkare(sm);
   SMIDESLISTA.forEach((u,i)=>{
-    const ux = cx-102+i*68 + 34 - 34, uy = topY;
-    const sx = cx - 102 + i*68;
+    const sx = cx + (i-1.5)*64;
     const niva = SMIDE[u.ny], max = niva>=u.kost.length;
-    ritaPanel(sx-30, uy-14, 60, 40);
-    utext(u.namn, sx, uy-4, 10, '#efe6d0');
-    if(max) utext('MAX', sx, uy+14, 10, '#8fd45a');
+    ritaPanel(sx-30, topY-14, 60, 40);
+    utext(u.namn, sx, topY-4, 10, '#efe6d0');
+    if(max) utext('MAX', sx, topY+14, 10, '#8fd45a');
     else {
-      ritaIkon('jarn', sx-14, uy+15, 0.7);
-      utext(''+u.kost[niva], sx-2, uy+14, 11, RES.jarn>=u.kost[niva]? '#ffd97a':'#d94f3c', 'left');
+      ritaIkon('jarn', sx-14, topY+15, 0.7);
+      utext(''+u.kost[niva], sx-2, topY+14, 11, RES.jarn>=u.kost[niva]? '#ffd97a':'#d94f3c', 'left');
     }
     for(let n=0;n<u.kost.length;n++){
       g.fillStyle = n<niva? '#8fd45a':'#3a2f26';
-      g.fillRect(sx+12+n*7, uy+11, 5, 5);
+      g.fillRect(sx+12+n*7, topY+11, 5, 5);
     }
   });
-  utext('Ställ dig under och tryck YXA för att smida', cx, topY+38, 9, '#a89e88');
+  utext('Gå intill och tryck YXA för att smida', cx, topY+38, 9, '#a89e88');
 }
 
 /* ---- lobbyn ---- */
@@ -1444,6 +1801,8 @@ const HJALTAR_DEF = [
 function ritaPortratt(ch,x,y,s){
   g.save(); g.translate(x,y); g.scale(s,s);
   g.fillStyle = ch.farg; g.fillRect(-11,-2,22,18);
+  g.fillStyle = 'rgba(255,255,255,0.22)'; g.fillRect(-11,-2,6,18);
+  g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(5,-2,6,18);
   g.fillStyle = '#d8a877'; g.fillRect(-8,-16,16,15);
   const k = ch.id;
   if(k==='sigrid'){ g.fillStyle = '#b8b8c2'; g.fillRect(-9,-19,18,7);
@@ -1454,10 +1813,10 @@ function ritaPortratt(ch,x,y,s){
   if(k==='rune'){ g.fillStyle = '#8a8a90'; g.fillRect(-8,-6,16,5); g.fillStyle = '#59401f'; g.fillRect(-9,1,18,10); }
   if(k==='embla'){ g.fillStyle = '#e8c86a'; g.fillRect(-9,-19,18,5); g.fillRect(-11,-15,4,14); g.fillRect(7,-15,4,14); }
   g.fillStyle = '#241a10'; g.fillRect(-4,-10,3,3); g.fillRect(2,-10,3,3);
+  g.strokeStyle = '#161016'; g.lineWidth = 1; g.strokeRect(-8,-16,16,15);
   g.restore();
 }
 function ritaLobby(){
-  // natthimmel
   const grad = g.createLinearGradient(0,0,0,VIEW_H);
   grad.addColorStop(0,'#0d0a1e'); grad.addColorStop(0.65,'#1c1530'); grad.addColorStop(1,'#241a2e');
   g.fillStyle = grad; g.fillRect(0,0,VIEW_W,VIEW_H);
@@ -1470,7 +1829,6 @@ function ritaLobby(){
   g.fillStyle = '#e8e4d8'; g.beginPath(); g.arc(VIEW_W-160, 86, 38, 0, 7); g.fill();
   g.fillStyle = '#c9c4b4'; g.beginPath(); g.arc(VIEW_W-172, 78, 7, 0, 7); g.fill();
   g.beginPath(); g.arc(VIEW_W-148, 96, 5, 0, 7); g.fill();
-  // kulle med by + skog i siluett
   g.fillStyle = '#151022';
   g.beginPath(); g.moveTo(0,VIEW_H);
   for(let x=0;x<=VIEW_W;x+=40) g.lineTo(x, VIEW_H-70-Math.sin(x*0.008)*26);
@@ -1480,20 +1838,16 @@ function ritaLobby(){
     g.fillStyle = '#0e0b18';
     g.beginPath(); g.moveTo(px,py-34); g.lineTo(px-11,py); g.lineTo(px+11,py); g.closePath(); g.fill();
   }
-  // långhus-siluett med varmt fönster
   g.fillStyle = '#0e0b18'; g.fillRect(VIEW_W/2-50, VIEW_H-118, 100, 48);
   g.beginPath(); g.moveTo(VIEW_W/2-56, VIEW_H-116); g.lineTo(VIEW_W/2, VIEW_H-142); g.lineTo(VIEW_W/2+56, VIEW_H-116); g.closePath(); g.fill();
   g.fillStyle = '#ffd97a'; g.fillRect(VIEW_W/2-12, VIEW_H-102, 9, 9); g.fillRect(VIEW_W/2+6, VIEW_H-102, 9, 9);
-  // glödande trollögon i skogsbrynet
   for(let i=0;i<5;i++){
     if(Math.sin(tid*0.7+i*2.3)<0.2) continue;
     const px = 60+i*205+brus2(i,99)*60, py = VIEW_H-58+brus2(i,55)*20;
     g.fillStyle = '#ffb03c'; g.fillRect(px,py,4,3); g.fillRect(px+8,py,4,3);
   }
-  // titel
   utext('TROLLNATT', VIEW_W/2, 74, 58, '#8fd4ff', 'center', '#101a3c');
   utext('Bygg om dagen — försvara om natten', VIEW_W/2, 116, 16, '#c9d4e8');
-  // hjältekort
   const antal = HJALTAR_DEF.length;
   HJALTAR_DEF.forEach((ch,ci)=>{
     const kx = VIEW_W/2 + (ci-(antal-1)/2)*150, ky = 240;
@@ -1557,54 +1911,59 @@ function ritaPaus(){
 /* ---- huvudritningen ---- */
 function ritaAllt(){
   if(SPEL.lage==='lobby'){ ritaLobby(); return; }
-  g.fillStyle = '#100c14'; g.fillRect(0,0,VIEW_W,VIEW_H);
+  // bakgrund utanför världsromben
+  g.fillStyle = SPEL.fas==='dag'? '#14231a' : '#0a0c1e';
+  g.fillRect(0,0,VIEW_W,VIEW_H);
   g.save();
   let ox = -Math.round(kamX), oy = -Math.round(kamY);
   if(skakT>0){ ox += slump(-skakA,skakA); oy += slump(-skakA,skakA); }
   g.translate(ox,oy);
-  ritaMark();
-  // djupsorterad lista
+  ritaMarkIso();
+  // djuplista (nyckel = x+y i världspixlar — främre hörn ritas sist)
   const lista = [];
-  const t0x = Math.max(0, Math.floor(kamX/TS)-1), t1x = Math.min(MAPW-1, Math.floor((kamX+VIEW_W)/TS)+1);
-  const t0y = Math.max(0, Math.floor(kamY/TS)-2), t1y = Math.min(MAPH-1, Math.floor((kamY+VIEW_H)/TS)+2);
-  for(let ty2=t0y; ty2<=t1y; ty2++) for(let tx2=t0x; tx2<=t1x; tx2++){
-    const o = obj[idx(tx2,ty2)];
-    if(o===O_TALL) lista.push({y:ty2*TS+TS, fn:ritaTall, a:tx2, b:ty2});
-    else if(o===O_STEN) lista.push({y:ty2*TS+TS-4, fn:ritaSten, a:tx2, b:ty2});
-    else if(o===O_MALM) lista.push({y:ty2*TS+TS-4, fn:ritaMalm, a:tx2, b:ty2});
-    else if(o===O_BAR) lista.push({y:ty2*TS+TS-6, fn:ritaBar, a:tx2, b:ty2});
+  const s0 = Math.max(0, Math.floor(kamY/12)-4), s1 = Math.min(MAPW+MAPH-2, Math.ceil((kamY+VIEW_H)/12)+8);
+  const d0 = Math.floor(kamX/24)-3, d1 = Math.ceil((kamX+VIEW_W)/24)+3;
+  for(let s=s0; s<=s1; s++){
+    let d = d0 + (((d0+s)%2!==0)?1:0);
+    for(; d<=d1; d+=2){
+      const tx = (s+d)/2, ty2 = (s-d)/2;
+      if(!inne(tx,ty2)) continue;
+      const o = obj[idx(tx,ty2)];
+      if(o===O_TALL) lista.push({d:(tx+ty2+1.6)*TS, fn:ritaTallIso, a:tx, b:ty2});
+      else if(o===O_STEN) lista.push({d:(tx+ty2+1.3)*TS, fn:ritaStenIso, a:tx, b:ty2});
+      else if(o===O_MALM) lista.push({d:(tx+ty2+1.3)*TS, fn:ritaMalmIso, a:tx, b:ty2});
+      else if(o===O_BAR) lista.push({d:(tx+ty2+1.1)*TS, fn:ritaBarIso, a:tx, b:ty2});
+    }
   }
   for(const b of byggnader){
-    if(!b) continue;
-    const by2 = (b.ty+b.def.h)*TS;
-    if(by2 < kamY-60 || b.ty*TS > kamY+VIEW_H+40) continue;
-    if((b.tx+b.def.w)*TS < kamX-40 || b.tx*TS > kamX+VIEW_W+40) continue;
-    lista.push({y: b.typ==='aker'? b.ty*TS+2 : by2-3, fn:ritaBygg, a:b});
+    if(!b || b.typ==='aker') continue;   // åkern ritades i markpasset
+    const bx = isoSX(b.tx*TS, b.ty*TS);
+    if(bx < kamX-260 || bx > kamX+VIEW_W+260) continue;
+    const by = (b.tx+b.ty)*12;
+    if(by < kamY-200 || by > kamY+VIEW_H+160) continue;
+    lista.push({d:(b.tx+b.ty+(b.def.w+b.def.h)/2)*TS, fn:ritaByggIso, a:b});
   }
-  for(const f of folket) if(!f.gomd) lista.push({y:f.y, fn:ritaFolk, a:f});
-  for(const m of mobbar) lista.push({y:m.y, fn:ritaMob, a:m});
-  for(const h of hjaltar) lista.push({y:h.y, fn:ritaHjalte, a:h});
-  lista.sort((p,q)=>p.y-q.y);
+  for(const f of folket) if(!f.gomd) lista.push({d:f.x+f.y, fn:ritaFolk, a:f});
+  for(const m of mobbar) lista.push({d:m.x+m.y, fn:ritaMob, a:m});
+  for(const h of hjaltar) lista.push({d:h.x+h.y, fn:ritaHjalte, a:h});
+  lista.sort((p,q)=>p.d-q.d);
   for(const e of lista) e.fn(e.a, e.b);
   for(const p of pilar) ritaPil(p);
   ritaPartiklar();
-  // byggspöken + smedjedisk
   for(const h of hjaltar) if(h.byggPa && h.nere<=0) ritaByggUI(h);
   for(const b of byggnader){
     if(!b || b.typ!=='smedja') continue;
     const cx = (b.tx+b.def.w/2)*TS, cy = (b.ty+b.def.h/2)*TS;
-    if(hjaltar.some(h=>avst(h.x,h.y,cx,cy)<86)) ritaSmedjeUI(b);
+    if(hjaltar.some(h=>avst(h.x,h.y,cx,cy)<90)) ritaSmedjeUI(b);
   }
-  // svävande texter (världskoordinater)
   for(const t of texter){
     g.globalAlpha = kl(1.6-t.t,0,1);
-    utext(t.txt, t.x, t.y - t.t*26, t.stor?15:11, t.farg);
+    utext(t.txt, isoSX(t.x,t.y), isoSY(t.x,t.y) - 20 - t.t*26, t.stor?15:11, t.farg);
     g.globalAlpha = 1;
   }
   ritaMorker();
   g.restore();
   ritaHUD();
-  // nya spelare mitt i spelet
   vantar.forEach((jr,i)=>{
     const ch = HJALTAR_DEF[jr.ci];
     ritaPanel(VIEW_W/2-160, VIEW_H-46-i*34, 320, 28);
@@ -1749,16 +2108,16 @@ function utforHandling(h){
     } else spela('nej');
     return;
   }
-  // 2) smedjans disk
+  // 2) smedjans disk (träffytan räknas i iso-skärmrummet, samma som ritningen)
   for(const b of byggnader){
     if(!b || b.typ!=='smedja' || b.hp<=0) continue;
-    const cx = (b.tx+b.def.w/2)*TS, topY = b.ty*TS-46;
-    if(avst(h.x,h.y,cx,(b.ty+1)*TS) > 86) continue;
-    let bast = -1, bd = 44;
+    const cwx = (b.tx+b.def.w/2)*TS, cwy = (b.ty+b.def.h/2)*TS;
+    if(avst(h.x,h.y,cwx,cwy) > 90) continue;
+    const scx = isoSX(cwx,cwy), shx = isoSX(h.x,h.y);
+    let bast = -1, bd = 34;
     SMIDESLISTA.forEach((u,i)=>{
-      const sx = cx-102+i*68;
-      const d = Math.abs(h.x-sx);
-      if(h.y < b.ty*TS+18 && d < bd){ bd = d; bast = i; }
+      const d = Math.abs(shx - (scx + (i-1.5)*64));
+      if(d < bd){ bd = d; bast = i; }
     });
     if(bast>=0){
       const u = SMIDESLISTA[bast], niva = SMIDE[u.ny];
@@ -1766,7 +2125,7 @@ function utforHandling(h){
       if(RES.jarn < u.kost[niva]){ spela('nej'); svavText(h.x, h.y-30, 'Mer järn behövs!', '#d94f3c'); return; }
       RES.jarn -= u.kost[niva]; SMIDE[u.ny]++;
       if(u.ny==='brynjor') for(const p of hjaltar){ p.maxhp += 30; p.hp += 30; }
-      spela('kop'); svavText(cx, topY-14, u.namn+' nivå '+SMIDE[u.ny]+'!', '#ffd97a', true);
+      spela('kop'); svavText(cwx, cwy-20, u.namn+' nivå '+SMIDE[u.ny]+'!', '#ffd97a', true);
       return;
     }
   }
@@ -1911,16 +2270,17 @@ function uppdHjalte(h, dt){
     }
     return;
   }
-  // gå
+  // gå — spaken är skärmrelativ: upp på skärmen = nordväst i iso-världen
   let dx = inp.x, dy = inp.y;
-  const langd2 = Math.hypot(dx,dy);
-  if(langd2>1){ dx/=langd2; dy/=langd2; }
+  let langd2 = Math.hypot(dx,dy);
+  if(langd2>1){ dx/=langd2; dy/=langd2; langd2 = 1; }
+  const wdx = (dx+dy)*0.7071, wdy = (dy-dx)*0.7071;
   const fart = HJALTE_STAT[h.ch.id].fart;
   if(langd2>0.1){
-    flyttaEnhet(h, dx*fart*dt, dy*fart*dt, 8, false);
+    flyttaEnhet(h, wdx*fart*dt, wdy*fart*dt, 8, false);
     h.gang += dt;
-    if(Math.abs(dx)>Math.abs(dy)){ h.fx = dx>0?1:-1; h.fy = 0; }
-    else { h.fy = dy>0?1:-1; h.fx = 0; }
+    const wl = Math.hypot(wdx,wdy)||1;
+    h.fx = wdx/wl; h.fy = wdy/wl;
   }
   // knappar
   if(inp.bT){ h.byggPa = !h.byggPa; spela('valj'); }
@@ -2328,7 +2688,8 @@ function uppdPilar(dt){
         continue;
       }
       p.x = mix(p.sx, p.tx, p.t);
-      p.y = mix(p.sy, p.ty, p.t) - Math.sin(p.t*Math.PI)*46;
+      p.y = mix(p.sy, p.ty, p.t);
+      p.h = Math.sin(p.t*Math.PI)*46;   // kastbågen ritas som höjd i iso
       continue;
     }
     p.x += p.vx*dt; p.y += p.vy*dt; p.liv -= dt;
@@ -2420,13 +2781,15 @@ function startNatt(){
   SPEL.nattKlar = false;
   sattLat(SPEL.dag===10? 'boss' : 'natt');
   spela('lur');
-  if(SPEL.dag===10){ spela('vral'); svavText(kamX+VIEW_W/2, kamY+120, 'BERGAKUNGEN KOMMER!', '#ffb03c', true); }
-  svavText(kamX+VIEW_W/2, kamY+90, '— NATT '+SPEL.dag+' —', '#8fd4ff', true);
+  const m1 = skarmMitt(120), m2 = skarmMitt(90);
+  if(SPEL.dag===10){ spela('vral'); svavText(m1[0], m1[1], 'BERGAKUNGEN KOMMER!', '#ffb03c', true); }
+  svavText(m2[0], m2[1], '— NATT '+SPEL.dag+' —', '#8fd4ff', true);
 }
 function startGryning(){
   SPEL.fas = 'gryning'; SPEL.klocka = 0;
   spela('tupp');
-  svavText(kamX+VIEW_W/2, kamY+90, 'GRYNING — trollen förstenas!', '#ffd97a', true);
+  const gm = skarmMitt(90);
+  svavText(gm[0], gm[1], 'GRYNING — trollen förstenas!', '#ffd97a', true);
 }
 function startDag(n){
   SPEL.dag = n; SPEL.fas = 'dag';
@@ -2434,7 +2797,7 @@ function startDag(n){
   SPEL.tidKvar = SPEL.dagLangd;
   SPEL.varnat = false;
   sattLat('dag');
-  if(n>1) svavText(kamX+VIEW_W/2, kamY+90, '— DAG '+n+' —', '#ffd97a', true);
+  if(n>1){ const dm = skarmMitt(90); svavText(dm[0], dm[1], '— DAG '+n+' —', '#ffd97a', true); }
 }
 function uppdDygn(dt){
   if(SPEL.fas==='dag'){
@@ -2488,15 +2851,17 @@ function segra(){
   SPEL.seger = true; SPEL.segerT = 0;
   sattLat('seger');
   spela('fanfar'); skaka(4,0.4);
-  for(let k=0;k<50;k++) partiklar.push({x:kamX+slump(0,VIEW_W), y:kamY+slump(0,VIEW_H*0.5),
-    vx:slump(-30,30), vy:slump(20,80), liv:slump(1,2.4), farg:valfri(['#ffd97a','#8fd4ff','#e893b8','#8fd45a']), st:4});
+  const lh = byggnader.find(b=>b && b.typ==='langhus');
+  const bx = lh? (lh.tx+1.5)*TS : PXW/2, by = lh? (lh.ty+1.5)*TS : PXH/2;
+  for(let k=0;k<60;k++) partiklar.push({x:bx+slump(-260,260), y:by+slump(-260,260), z:slump(60,180),
+    vx:slump(-20,20), vy:slump(-10,30), liv:slump(1.2,2.6), farg:valfri(['#ffd97a','#8fd4ff','#e893b8','#8fd45a']), st:4});
 }
 
 /* ---- huvuduppdateringen i spelet ---- */
 function uppdSpel(dt){
   if(SPEL.lage==='slut'){
     SPEL.slutT -= dt;
-    for(const p of [...partiklar]){ p.x += p.vx*dt; p.y += p.vy*dt; p.liv -= dt; if(p.liv<=0) partiklar.splice(partiklar.indexOf(p),1); }
+    for(const p of [...partiklar]){ p.x += p.vx*dt; p.z = (p.z||0)-p.vy*dt; p.liv -= dt; if(p.liv<=0) partiklar.splice(partiklar.indexOf(p),1); }
     if(SPEL.slutT<=0){
       for(const h of hjaltar) if(lasInput(h.pad).aT){ startSpel(); return; }
     }
@@ -2515,7 +2880,8 @@ function uppdSpel(dt){
   uppdByggnader(dt);
   // partiklar & texter
   for(const p of [...partiklar]){
-    p.x += p.vx*dt; p.y += p.vy*dt;
+    p.x += p.vx*dt;
+    p.z = (p.z||0) - p.vy*dt;   // negativ vy = uppåt; ritas som höjd över marken
     if(!p.rok) p.vy += 140*dt;
     p.liv -= dt;
     if(p.liv<=0) partiklar.splice(partiklar.indexOf(p),1);
