@@ -1,0 +1,2922 @@
+<!doctype html><html lang="sv"><head><meta charset="utf-8">
+<title>Trollnatt</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<style>
+  html,body{margin:0;padding:0;height:100%;background:#100c14;overflow:hidden;overscroll-behavior:none;
+    font-family:'Trebuchet MS',Verdana,sans-serif;-webkit-user-select:none;user-select:none}
+  #stage{position:fixed;inset:0;display:flex;align-items:center;justify-content:center}
+  #duk{image-rendering:pixelated;image-rendering:crisp-edges;background:#100c14;outline:none}
+
+  /* ---- startval på liten pekskärm ---- */
+  #valUI{position:fixed;inset:0;z-index:20;display:none;flex-direction:column;align-items:center;
+    justify-content:center;gap:20px;background:radial-gradient(ellipse at 50% 30%,#2a2038 0%,#100c14 75%);color:#efe6d0}
+  .runbtn{font-family:inherit;font-size:18px;font-weight:bold;letter-spacing:1px;color:#1c1206;
+    background:linear-gradient(#f0c860,#c89334);border:0;border-bottom:4px solid #7d5a14;
+    border-radius:12px;padding:16px 26px;cursor:pointer;touch-action:manipulation}
+  .runbtn.svag{background:linear-gradient(#5a5142,#3c352a);color:#d8ceb8;border-bottom-color:#241f16;font-size:14px}
+  #kodDel{display:none;flex-direction:column;align-items:center;gap:12px}
+  #kodFalt{font-family:monospace;font-size:30px;text-transform:uppercase;letter-spacing:10px;width:200px;
+    text-align:center;background:#221a2c;color:#efe6d0;border:2px solid #55486a;border-radius:10px;padding:10px}
+
+  /* ---- mobilkontrollen ---- */
+  #padUI{position:fixed;inset:0;z-index:15;display:none;flex-direction:column;
+    background:linear-gradient(#181022 0%,#100c14 40%),#100c14;touch-action:none}
+  #padInfo{width:100%;box-sizing:border-box;text-align:center;padding:10px;
+    padding-top:calc(10px + env(safe-area-inset-top));font-size:15px;line-height:1.45;color:#efe6d0;
+    background:#1d1526;border-bottom:2px solid #3a2f4c;min-height:50px}
+  #padYta{flex:1;position:relative;touch-action:none}
+  #spakYta{position:absolute;left:0;top:0;bottom:0;width:52%;touch-action:none}
+  #spakTips{position:absolute;left:25%;top:50%;transform:translate(-50%,-50%);color:#5a5142;
+    font-size:13px;text-align:center;pointer-events:none}
+  #spakRing{position:absolute;width:128px;height:128px;border-radius:50%;border:3px solid #55486a;
+    background:rgba(60,48,84,.4);display:none;pointer-events:none}
+  #spakPuck{position:absolute;width:60px;height:60px;border-radius:50%;display:none;pointer-events:none;
+    background:radial-gradient(circle at 40% 35%,#b8aecb,#6f6488)}
+  .knapp{position:absolute;border-radius:50%;font-family:inherit;font-weight:bold;letter-spacing:1px;
+    display:flex;align-items:center;justify-content:center;border:0;touch-action:none;
+    -webkit-tap-highlight-color:transparent;color:#241505}
+  #knA{right:4%;bottom:10%;width:118px;height:118px;font-size:19px;
+    background:radial-gradient(circle at 38% 32%,#ffd97a,#d99a26 68%,#9c6a12);box-shadow:0 5px 0 #6b4708}
+  #knB{right:28%;bottom:40%;width:92px;height:92px;font-size:14px;
+    background:radial-gradient(circle at 38% 32%,#a8e08a,#5da13e 68%,#3c6e24);box-shadow:0 4px 0 #264915}
+  #knC{right:6%;bottom:60%;width:80px;height:80px;font-size:12px;
+    background:radial-gradient(circle at 38% 32%,#9ecbff,#4f83d4 68%,#31589c);box-shadow:0 4px 0 #1d3763}
+  .knapp.tryckt{filter:brightness(1.4);transform:translateY(3px)}
+  #padUI.pahost{background:transparent;pointer-events:none}
+  #padUI.pahost #padInfo{display:none}
+  #padUI.pahost #spakYta,#padUI.pahost .knapp{pointer-events:auto;opacity:.5}
+  #padUI.pahost #knA{width:86px;height:86px;font-size:14px}
+  #padUI.pahost #knB{width:68px;height:68px;font-size:11px}
+  #padUI.pahost #knC{width:60px;height:60px;font-size:10px}
+  #padUI.pahost #spakTips{color:rgba(255,255,255,.3)}
+
+  /* ---- QR-skylt (bara i lobbyn på värden) ---- */
+  #qrSkylt{position:fixed;right:14px;bottom:14px;z-index:5;display:none;text-align:center;
+    background:#2b2136;border:3px solid #c89334;border-radius:12px;padding:10px;color:#efe6d0}
+  #qrSkylt .kod{font-family:monospace;font-size:18px;font-weight:bold;letter-spacing:3px;color:#8fd4ff;margin-top:3px}
+</style></head><body>
+<div id="stage"><canvas id="duk" width="960" height="540" tabindex="0"></canvas></div>
+
+<div id="valUI">
+  <div style="font-size:30px;font-weight:bold;color:#8fd4ff;text-shadow:0 3px 0 #1d3763;letter-spacing:3px">TROLLNATT</div>
+  <div style="font-size:13px;color:#a89e88;margin-top:-12px">Bygg om dagen &mdash; f&ouml;rsvara om natten</div>
+  <button class="runbtn" id="valAnslut">&#128241; Bli handkontroll</button>
+  <div id="kodDel">
+    <div style="font-size:13px;color:#a89e88">Skriv koden fr&aring;n stora sk&auml;rmen:</div>
+    <input id="kodFalt" maxlength="4" autocapitalize="characters" autocomplete="off" spellcheck="false">
+    <button class="runbtn" id="kodGo">ANSLUT</button>
+  </div>
+  <button class="runbtn svag" id="valHost">&#128421;&#65039; Spela p&aring; den h&auml;r sk&auml;rmen</button>
+</div>
+
+<div id="padUI">
+  <div id="padInfo">Ansluter&hellip;</div>
+  <div id="padYta">
+    <div id="spakYta">
+      <div id="spakTips">Dra h&auml;r<br>f&ouml;r att g&aring;</div>
+      <div id="spakRing"></div><div id="spakPuck"></div>
+    </div>
+    <button class="knapp" id="knC">KRAFT</button>
+    <button class="knapp" id="knB">BYGG</button>
+    <button class="knapp" id="knA">YXA</button>
+  </div>
+</div>
+
+<div id="qrSkylt"></div>
+<script>
+'use strict';
+/* ================================================================
+   TROLLNATT — bygg vikingabyn om dagen, överlev trollen om natten.
+   Co-op för hela familjen: en stor skärm, mobilerna som kontroller.
+   Helt egen kod, grafik och musik byggd från grunden.
+   ================================================================ */
+const duk = document.getElementById('duk');
+const g = duk.getContext('2d');
+g.imageSmoothingEnabled = false;
+const VIEW_W = 960, VIEW_H = 540;
+
+function passaSkarm(){
+  const s = Math.min(window.innerWidth/VIEW_W, window.innerHeight/VIEW_H);
+  duk.style.width = Math.floor(VIEW_W*s)+'px';
+  duk.style.height = Math.floor(VIEW_H*s)+'px';
+}
+window.addEventListener('resize', passaSkarm); passaSkarm();
+duk.focus();
+
+// små hjälpare
+const avst = (x1,y1,x2,y2)=>Math.hypot(x2-x1, y2-y1);
+const kl = (v,lo,hi)=>v<lo?lo:(v>hi?hi:v);
+const mix = (a,b,t)=>a+(b-a)*t;
+const slump = (a,b)=>a+Math.random()*(b-a);
+const valfri = arr=>arr[(Math.random()*arr.length)|0];
+// deterministiskt tilebrus (för gräsdetaljer m.m.)
+function brus2(x,y){ let h = (x*374761393 + y*668265263)|0; h = (h^(h>>13))*1274126177; return ((h^(h>>16))>>>0)/4294967295; }
+</script>
+<script>
+'use strict';
+/* ===================== LJUD & MUSIK =====================
+   Egen liten WebAudio-motor. All musik är originalkompositioner
+   i nordisk folkton — flöjt, puls och trumma. */
+let actx = null, sfxVol = null, musVol = null, brusBuf = null, musikPa = true;
+function vackLjud(){
+  if(actx) return;
+  try{
+    actx = new (window.AudioContext||window.webkitAudioContext)();
+    sfxVol = actx.createGain(); sfxVol.gain.value = 0.5; sfxVol.connect(actx.destination);
+    musVol = actx.createGain(); musVol.gain.value = 0.32; musVol.connect(actx.destination);
+    brusBuf = actx.createBuffer(1, actx.sampleRate*0.35, actx.sampleRate);
+    const d = brusBuf.getChannelData(0);
+    for(let i=0;i<d.length;i++) d[i] = Math.random()*2-1;
+    MUSIK.nasta = actx.currentTime + 0.1;
+  }catch(e){}
+}
+duk.addEventListener('pointerdown', ()=>{ duk.focus(); vackLjud(); });
+const tonHz = m=>440*Math.pow(2,(m-69)/12);
+
+function ton(f0,f1,dur,vag,vol,nar){
+  if(!actx) return;
+  const t = nar!==undefined?nar:actx.currentTime;
+  const o = actx.createOscillator(), gn = actx.createGain();
+  o.type = vag; o.frequency.setValueAtTime(Math.max(1,f0), t);
+  if(f1!==f0) o.frequency.exponentialRampToValueAtTime(Math.max(1,f1), t+dur);
+  gn.gain.setValueAtTime(vol, t);
+  gn.gain.exponentialRampToValueAtTime(0.001, t+dur);
+  o.connect(gn); gn.connect(sfxVol);
+  o.start(t); o.stop(t+dur+0.03);
+}
+function sus(dur,vol,hp,nar){
+  if(!actx) return;
+  const t = nar!==undefined?nar:actx.currentTime;
+  const s = actx.createBufferSource(); s.buffer = brusBuf;
+  const gn = actx.createGain();
+  gn.gain.setValueAtTime(vol, t);
+  gn.gain.exponentialRampToValueAtTime(0.001, t+dur);
+  let ut = s;
+  if(hp){ const f = actx.createBiquadFilter(); f.type='highpass'; f.frequency.value = hp; s.connect(f); ut = f; }
+  ut.connect(gn); gn.connect(sfxVol);
+  s.start(t); s.stop(t+dur+0.03);
+}
+const SFX = {
+  yxa(){ sus(0.07,0.2,900); ton(120,60,0.09,'triangle',0.25); },
+  sten(){ ton(1100,280,0.06,'square',0.14); sus(0.06,0.16,2500); },
+  malm(){ ton(1750,900,0.09,'triangle',0.2); sus(0.05,0.1,3000); },
+  bar(){ ton(560,890,0.08,'sine',0.22); },
+  bygg(){ const t=actx?actx.currentTime:0; ton(170,90,0.07,'triangle',0.26,t); ton(200,100,0.07,'triangle',0.26,t+0.11); sus(0.05,0.1,1500,t); },
+  laga(){ ton(950,1250,0.05,'square',0.12); },
+  nej(){ ton(160,120,0.16,'square',0.16); },
+  svard(){ sus(0.09,0.2,2600); },
+  pil(){ ton(880,320,0.07,'square',0.13); sus(0.04,0.1,3200); },
+  traff(){ ton(260,80,0.09,'square',0.22); sus(0.05,0.12,900); },
+  krossa(){ ton(140,45,0.16,'sawtooth',0.3); sus(0.14,0.22,500); },
+  boom(){ ton(110,28,0.45,'sawtooth',0.42); sus(0.4,0.3,90); },
+  aj(){ ton(330,95,0.14,'sawtooth',0.26); },
+  nere(){ ton(300,55,0.5,'sawtooth',0.3); sus(0.2,0.14,400); },
+  uppe(){ const t=actx?actx.currentTime:0; [62,66,69,74].forEach((n,i)=>ton(tonHz(n),tonHz(n),0.12,'square',0.18,t+i*0.08)); },
+  dod(){ ton(220,60,0.16,'triangle',0.24); sus(0.1,0.16,600); },
+  stenad(){ sus(0.12,0.2,700); ton(1900,1400,0.1,'triangle',0.1); },
+  smulas(){ sus(0.2,0.22,350); },
+  lur(){ const t=actx?actx.currentTime:0; ton(tonHz(45),tonHz(45),1.1,'sawtooth',0.2,t); ton(tonHz(52),tonHz(52),1.0,'sawtooth',0.12,t+0.12); ton(tonHz(57),tonHz(57),0.85,'sawtooth',0.1,t+0.3); },
+  tupp(){ const t=actx?actx.currentTime:0; ton(tonHz(76),tonHz(76),0.09,'square',0.14,t); ton(tonHz(83),tonHz(83),0.16,'square',0.14,t+0.1); },
+  folk(){ ton(500,780,0.1,'triangle',0.2); ton(780,650,0.09,'triangle',0.16,actx?actx.currentTime+0.1:0); },
+  kop(){ const t=actx?actx.currentTime:0; ton(2100,2100,0.06,'triangle',0.2,t); [67,71,74].forEach((n,i)=>ton(tonHz(n),tonHz(n),0.1,'square',0.15,t+0.07+i*0.06)); },
+  hjarta(){ const t=actx?actx.currentTime:0; [69,74,78].forEach((n,i)=>ton(tonHz(n),tonHz(n),0.14,'sine',0.2,t+i*0.06)); },
+  valj(){ ton(520,520,0.05,'square',0.12); },
+  redo(){ ton(tonHz(60),tonHz(67),0.14,'square',0.18); },
+  vral(){ ton(90,26,0.9,'sawtooth',0.45); sus(0.7,0.24,110); },
+  varning(){ const t=actx?actx.currentTime:0; ton(820,820,0.09,'square',0.15,t); ton(820,820,0.09,'square',0.15,t+0.16); },
+  fanfar(){ const t=actx?actx.currentTime:0; [67,67,67,71,74,79].forEach((n,i)=>ton(tonHz(n),tonHz(n),0.2,'square',0.2,t+i*0.13)); },
+};
+function spela(n){ if(actx && SFX[n]) SFX[n](); }
+
+/* ---- notparser: "F#4" = ton, "~" = håll, "." = paus ---- */
+function tolkaNoter(str){
+  const tk = str.trim().split(/\s+/);
+  const ut = new Array(tk.length).fill(null);
+  for(let i=0;i<tk.length;i++){
+    const m = tk[i].match(/^([A-G])(#|b)?(\d)$/);
+    if(!m) continue;
+    let n = {C:0,D:2,E:4,F:5,G:7,A:9,B:11}[m[1]] + (m[2]==='#'?1:m[2]==='b'?-1:0) + (+m[3]+1)*12;
+    let len = 1;
+    for(let j=i+1;j<tk.length && tk[j]==='~';j++) len++;
+    ut[i] = {n, len};
+  }
+  return ut;
+}
+function lat(tempo, langd, spar, trummor){
+  return { tempo, langd,
+    spar: spar.map(s=>({inst:s[0], vol:s[1], seq:tolkaNoter(s[2])})),
+    trummor:(trummor||'').replace(/\s/g,'') };
+}
+function spelaNot(inst, midi, t, dur, vol){
+  const o = actx.createOscillator(), gn = actx.createGain();
+  if(inst==='flojt'){
+    o.type = 'sine';
+    gn.gain.setValueAtTime(0.001, t);
+    gn.gain.linearRampToValueAtTime(vol, t+0.035);
+    gn.gain.setValueAtTime(vol, t+Math.max(0.04, dur-0.05));
+    gn.gain.exponentialRampToValueAtTime(0.001, t+dur);
+    const lfo = actx.createOscillator(), lg = actx.createGain();
+    lfo.type='sine'; lfo.frequency.value = 5.1; lg.gain.value = tonHz(midi)*0.008;
+    lfo.connect(lg); lg.connect(o.frequency); lfo.start(t+0.09); lfo.stop(t+dur+0.03);
+  } else {
+    o.type = inst==='bas' ? 'triangle' : inst==='org' ? 'sawtooth' : 'square';
+    gn.gain.setValueAtTime(vol, t);
+    gn.gain.setValueAtTime(vol, t+Math.max(0.01, dur-0.04));
+    gn.gain.exponentialRampToValueAtTime(0.001, t+dur);
+  }
+  o.frequency.value = tonHz(midi);
+  o.connect(gn); gn.connect(musVol);
+  o.start(t); o.stop(t+dur+0.03);
+}
+function trumma(c, t){
+  if(!brusBuf) return;
+  const brus = (vol,hp,dur,loop)=>{ const s=actx.createBufferSource(); s.buffer=brusBuf; if(loop)s.loop=true;
+    const gn=actx.createGain(), f=actx.createBiquadFilter();
+    f.type='highpass'; f.frequency.value=hp;
+    gn.gain.setValueAtTime(vol,t); gn.gain.exponentialRampToValueAtTime(0.001,t+dur);
+    s.connect(f); f.connect(gn); gn.connect(musVol); s.start(t); s.stop(t+dur+0.02); };
+  if(c==='B'||c==='C'){ const o=actx.createOscillator(), gn=actx.createGain();
+    o.type='triangle'; o.frequency.setValueAtTime(105,t); o.frequency.exponentialRampToValueAtTime(38,t+0.1);
+    gn.gain.setValueAtTime(0.34,t); gn.gain.exponentialRampToValueAtTime(0.001,t+0.11);
+    o.connect(gn); gn.connect(musVol); o.start(t); o.stop(t+0.12); }
+  if(c==='V') brus(0.11,1600,0.09);
+  if(c==='x') brus(0.045,7000,0.03);
+  if(c==='C') brus(0.11,4800,0.45,true);
+}
+/* ---- Låtarna (allt eget) ---- */
+const LATAR = {
+// Lobby: folkvals i G-dur, 3/4-takt (12 steg per takt, 4 takter)
+lobby: lat(0.135, 48, [
+ ['puls',0.08,
+  `G4 ~ ~ B4 ~ ~ D5 ~ ~ B4 ~ ~
+   C5 ~ ~ E5 ~ D5 C5 ~ ~ A4 ~ ~
+   B4 ~ ~ D5 ~ C5 B4 ~ ~ G4 ~ ~
+   A4 ~ B4 A4 ~ F#4 G4 ~ ~ ~ ~ ~`],
+ ['puls',0.045,
+  `. . D4 . . D4 . . D4 . . D4
+   . . E4 . . E4 . . E4 . . E4
+   . . D4 . . D4 . . D4 . . D4
+   . . C4 . . C4 . . B3 . . .`],
+ ['bas',0.16,
+  `G2 . . . . . D3 . . . . .
+   C3 . . . . . A2 . . . . .
+   G2 . . . . . E3 . . . . .
+   D3 . . . D3 . G2 . . . . .`]],
+ `B..x..V..x.. B..x..V..x.. B..x..V..x.. B..x..V..x..`),
+// Dagstema: lugn D-dorisk folkmelodi med flöjt — byn arbetar
+dag: lat(0.14, 64, [
+ ['flojt',0.085,
+  `D5 ~ ~ E5 F5 ~ E5 D5 A4 ~ ~ ~ . . D5 E5
+   F5 ~ G5 A5 G5 ~ F5 E5 D5 ~ ~ ~ . . A4 C5
+   D5 ~ ~ F5 E5 ~ D5 C5 D5 ~ E5 F5 G5 ~ E5 ~
+   F5 E5 D5 ~ C5 ~ A4 ~ D5 ~ ~ ~ ~ . . .`],
+ ['puls',0.032,
+  `. . D4 . . . A3 . . . D4 . . . D4 .
+   . . F4 . . . C4 . . . F4 . . . F4 .
+   . . D4 . . . D4 . . . G4 . . . E4 .
+   . . D4 . . . A3 . . . D4 . . . . .`],
+ ['bas',0.15,
+  `D3 . . . A2 . . . D3 . . . A2 . . .
+   F2 . . . C3 . . . D3 . . . A2 . . .
+   D3 . . . A2 . . . G2 . . . C3 . . .
+   F2 . . . C3 . . . D3 . . . D3 . . .`]],
+ `B...x...V...x... B...x...V...x... B...x...V...x... B...x...V...x...`),
+// Natt: spänd B-moll — trollen kommer
+natt: lat(0.105, 64, [
+ ['puls',0.07,
+  `B3 ~ ~ ~ D4 ~ C#4 B3 F#4 ~ ~ ~ . . E4 D4
+   B3 ~ ~ ~ D4 ~ E4 F#4 G4 ~ F#4 E4 D4 ~ C#4 ~
+   B3 ~ ~ ~ D4 ~ C#4 B3 A4 ~ ~ ~ G4 ~ F#4 ~
+   E4 ~ F#4 G4 F#4 ~ E4 D4 C#4 ~ ~ ~ B3 ~ ~ ~`],
+ ['org',0.028,
+  `B2 ~ ~ ~ ~ ~ ~ ~ B2 ~ ~ ~ ~ ~ ~ ~
+   B2 ~ ~ ~ ~ ~ ~ ~ G2 ~ ~ ~ ~ ~ ~ ~
+   B2 ~ ~ ~ ~ ~ ~ ~ A2 ~ ~ ~ ~ ~ ~ ~
+   E2 ~ ~ ~ ~ ~ ~ ~ F#2 ~ ~ ~ ~ ~ ~ ~`],
+ ['bas',0.17,
+  `B2 . B2 . B2 . B2 . B2 . B2 . B2 . B2 .
+   B2 . B2 . B2 . B2 . G2 . G2 . G2 . G2 .
+   B2 . B2 . B2 . B2 . A2 . A2 . A2 . A2 .
+   E2 . E2 . E2 . E2 . F#2 . F#2 . B2 . B2 .`]],
+ `B.x.V.x.B.x.V.x. B.x.V.x.B.x.V.x. B.x.V.x.B.x.V.x. B.x.V.x.B.V.V.VV`),
+// Bergakungen: tungt E-frygiskt riff
+boss: lat(0.09, 64, [
+ ['puls',0.08,
+  `E4 E4 F4 E4 G4 ~ F4 E4 E4 E4 F4 E4 B4 ~ A4 G4
+   E4 E4 F4 E4 G4 ~ A4 B4 C5 ~ B4 A4 G4 ~ F4 ~
+   E5 ~ ~ ~ D5 ~ C5 ~ B4 ~ ~ ~ C5 ~ B4 A4
+   G4 A4 B4 ~ C5 B4 A4 ~ F4 ~ G4 ~ E4 ~ ~ ~`],
+ ['org',0.03,
+  `E3 ~ ~ ~ ~ ~ ~ ~ E3 ~ ~ ~ ~ ~ ~ ~
+   E3 ~ ~ ~ ~ ~ ~ ~ A2 ~ ~ ~ ~ ~ ~ ~
+   C3 ~ ~ ~ ~ ~ ~ ~ G2 ~ ~ ~ ~ ~ ~ ~
+   A2 ~ ~ ~ ~ ~ ~ ~ E3 ~ ~ ~ ~ ~ ~ ~`],
+ ['bas',0.18,
+  `E2 E2 . E2 E2 . E2 E2 E2 E2 . E2 E2 . E2 E2
+   E2 E2 . E2 E2 . E2 E2 A2 A2 . A2 A2 . A2 A2
+   C2 C2 . C2 C2 . C2 C2 G2 G2 . G2 G2 . G2 G2
+   A2 A2 . A2 A2 . A2 A2 E2 E2 . E2 E2 . E2 E2`]],
+ `C.x.V.x.B.x.V.x. B.x.V.x.B.x.V.x. B.x.V.x.B.x.V.x. B.x.V.x.B.V.V.VV`),
+// Seger: ljus fanfar i C
+seger: lat(0.12, 32, [
+ ['puls',0.085,
+  `C5 ~ E5 ~ G5 ~ ~ ~ E5 ~ G5 ~ C6 ~ ~ ~
+   A5 ~ G5 ~ F5 ~ E5 ~ D5 ~ E5 ~ C5 ~ ~ ~`],
+ ['puls',0.05,
+  `E4 ~ G4 ~ C5 ~ ~ ~ G4 ~ C5 ~ E5 ~ ~ ~
+   F4 ~ E4 ~ A4 ~ G4 ~ B3 ~ C4 ~ E4 ~ ~ ~`],
+ ['bas',0.16,
+  `C3 . G2 . C3 . G2 . C3 . G2 . C3 . C3 .
+   F2 . C3 . G2 . G2 . G2 . G2 . C3 . C3 .`]],
+ `B.x.V.x.B.x.V.x. B.x.V.x.B...C...`),
+// Nederlag: sorgsen a-moll
+slut: lat(0.18, 32, [
+ ['puls',0.065,
+  `A4 ~ ~ ~ G4 ~ ~ ~ F4 ~ ~ ~ E4 ~ ~ ~
+   D4 ~ ~ ~ E4 ~ ~ ~ A3 ~ ~ ~ ~ ~ . .`],
+ ['bas',0.14,
+  `A2 ~ ~ ~ ~ ~ ~ ~ D2 ~ ~ ~ ~ ~ ~ ~
+   D2 ~ ~ ~ E2 ~ ~ ~ A2 ~ ~ ~ ~ ~ . .`]],
+ `B.......B....... B.......B.......`)
+};
+const MUSIK = { namn:'', lat:null, steg:0, nasta:0 };
+function sattLat(n){
+  if(MUSIK.namn===n) return;
+  MUSIK.namn = n; MUSIK.lat = LATAR[n]||null; MUSIK.steg = 0;
+  if(actx) MUSIK.nasta = actx.currentTime + 0.08;
+}
+function musikPuls(){
+  if(!actx || !musikPa || !MUSIK.lat) return;
+  if(MUSIK.nasta < actx.currentTime - 0.2) MUSIK.nasta = actx.currentTime + 0.05;
+  const L = MUSIK.lat;
+  while(MUSIK.nasta < actx.currentTime + 0.32){
+    const i = MUSIK.steg % L.langd, t = MUSIK.nasta;
+    for(const sp of L.spar){
+      const nt = sp.seq[i];
+      if(nt) spelaNot(sp.inst, nt.n, t, nt.len*L.tempo, sp.vol);
+    }
+    if(i < L.trummor.length && L.trummor[i]!=='.') trumma(L.trummor[i], t);
+    MUSIK.nasta += L.tempo; MUSIK.steg++;
+  }
+}
+</script>
+<script>
+'use strict';
+/* ===================== VÄRLDEN =====================
+   Tilekarta med mark- och objektlager, byggnader, flödesfält
+   (Dijkstra) för trollens väg mot Långhuset samt A* för byborna. */
+const TS = 24;                       // tilestorlek i px
+const MAPW = 96, MAPH = 64;
+const PXW = MAPW*TS, PXH = MAPH*TS;
+const DAG_LANGD = 120;               // sekunder dagsljus (dag 1 får bonus)
+
+// marklager
+const M_GRAS = 0, M_VATTEN = 1, M_STRAND = 2;
+// objektlager (natur)
+const O_TOM = 0, O_TALL = 1, O_STEN = 2, O_MALM = 3, O_BAR = 4, O_STUBBE = 5, O_GRUS = 6, O_BLOMMA = 7;
+
+let mark = new Uint8Array(MAPW*MAPH);
+let obj = new Uint8Array(MAPW*MAPH);
+let objHP = new Int8Array(MAPW*MAPH);
+let byggKarta = new Int16Array(MAPW*MAPH);
+let aterVax = {};                    // tileindex -> sekunder kvar till återväxt
+let varldFro = 0;
+
+const idx = (tx,ty)=>ty*MAPW+tx;
+const inne = (tx,ty)=>tx>=0&&ty>=0&&tx<MAPW&&ty<MAPH;
+
+// ---- delat speltillstånd (fylls på av senare delar) ----
+const SPEL = { lage:'lobby', dag:1, fas:'dag', klocka:0, natt:{}, paus:false, seger:false, segerT:0, slutT:0, startT:-1 };
+let RES = { tra:40, sten:10, mat:15, jarn:0 };
+const SMIDE = { yxor:0, pilar:0, vapen:0, brynjor:0 };   // smedjans nivåer — överlever nytt försök
+let hjaltar = [], vantar = [], folket = [], mobbar = [], pilar = [], partiklar = [], texter = [];
+let statistik = { dodade:0, byggt:0, folkFott:0 };
+let tid = 0, skakA = 0, skakT = 0;
+function skaka(a,t){ skakA = Math.max(skakA,a); skakT = Math.max(skakT,t); }
+function svavText(x,y,txt,farg,stor){ texter.push({x,y,txt,farg:farg||'#efe6d0',t:0,stor}); }
+
+// ---- byggnadstyper ----
+const BTYP = {
+  langhus:{namn:'Långhuset', w:3,h:3, hp:650, kost:{},               byggbar:false, lager:true, info:'Byns hjärta — faller det är allt förlorat'},
+  palissad:{namn:'Palissad', w:1,h:1, hp:70,  kost:{tra:2},          info:'Enkel trämur'},
+  port:{namn:'Port',         w:1,h:1, hp:100, kost:{tra:8},          info:'Byborna passerar, trollen stängs ute'},
+  fackla:{namn:'Fackla',     w:1,h:1, hp:25,  kost:{tra:1}, fast:false, info:'Ljus i mörkret'},
+  torn:{namn:'Skyttetorn',   w:1,h:1, hp:160, kost:{tra:20,sten:8},  info:'Skjuter pilar på trollen'},
+  stenmur:{namn:'Stenmur',   w:1,h:1, hp:200, kost:{sten:4},         info:'Håller även troll ute'},
+  stuga:{namn:'Stuga',       w:2,h:2, hp:120, kost:{tra:20},         info:'+2 bybor kan bo här'},
+  koja:{namn:'Huggarkoja',   w:2,h:2, hp:100, kost:{tra:15}, jobb:'ved',  info:'En vedhuggare börjar jobba'},
+  brott:{namn:'Stenbrott',   w:2,h:2, hp:100, kost:{tra:20}, jobb:'sten', info:'En stenbrytare börjar jobba'},
+  gruva:{namn:'Gruva',       w:2,h:2, hp:100, kost:{tra:25,sten:10}, jobb:'malm', info:'En gruvkarl bryter järnmalm'},
+  aker:{namn:'Åker',         w:2,h:2, hp:60,  kost:{tra:15}, jobb:'mat',  info:'En bonde odlar mat'},
+  bod:{namn:'Bod',           w:2,h:2, hp:100, kost:{tra:12}, lager:true,  info:'Lager — kortare bärväg för byborna'},
+  smedja:{namn:'Smedja',     w:2,h:2, hp:140, kost:{tra:25,sten:15}, info:'Byt järn mot uppgraderingar'},
+};
+const BYGGLISTA = ['palissad','port','fackla','torn','stenmur','stuga','koja','brott','gruva','aker','bod','smedja'];
+let byggnader = [];                  // instanser (null = riven), byggKarta pekar på index
+
+function bygget(tx,ty){ const bi = inne(tx,ty)? byggKarta[idx(tx,ty)] : -1; return bi>=0? byggnader[bi] : null; }
+
+// ---- slumpkälla (xorshift) för världsbygget ----
+function gorSlump(fro){
+  let s = (fro>>>0)||1;
+  return ()=>{ s^=s<<13; s>>>=0; s^=s>>17; s^=s<<5; s>>>=0; return s/4294967296; };
+}
+
+function nyVarld(fro){
+  varldFro = fro;
+  const R = gorSlump(fro);
+  mark.fill(M_GRAS); obj.fill(O_TOM); objHP.fill(0); byggKarta.fill(-1);
+  aterVax = {}; byggnader = [];
+  const CX = 48, CY = 32;
+  const blob = (cx,cy,r,fn)=>{
+    for(let ty=Math.floor(cy-r-1); ty<=Math.ceil(cy+r+1); ty++)
+      for(let tx=Math.floor(cx-r-1); tx<=Math.ceil(cx+r+1); tx++){
+        if(!inne(tx,ty)) continue;
+        const d = Math.hypot(tx-cx, ty-cy);
+        if(d <= r + (R()-0.5)*1.6) fn(tx,ty,d);
+      }
+  };
+  // sjöar
+  const nSjo = 1 + (R()*2|0);
+  for(let i=0;i<nSjo;i++){
+    const a = R()*Math.PI*2, d = 20 + R()*14;
+    const cx = kl(Math.round(CX+Math.cos(a)*d), 10, MAPW-11), cy = kl(Math.round(CY+Math.sin(a)*d*0.7), 8, MAPH-9);
+    blob(cx,cy, 4+R()*3, (tx,ty)=>{ mark[idx(tx,ty)] = M_VATTEN; });
+  }
+  // strandkant runt vatten
+  for(let ty=1;ty<MAPH-1;ty++) for(let tx=1;tx<MAPW-1;tx++){
+    if(mark[idx(tx,ty)]!==M_GRAS) continue;
+    let vid = false;
+    for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++) if(mark[idx(tx+dx,ty+dy)]===M_VATTEN) vid = true;
+    if(vid) mark[idx(tx,ty)] = M_STRAND;
+  }
+  // tallskogar
+  for(let i=0;i<9;i++){
+    const a = R()*Math.PI*2, d = 10 + R()*26;
+    const cx = kl(Math.round(CX+Math.cos(a)*d), 6, MAPW-7), cy = kl(Math.round(CY+Math.sin(a)*d*0.75), 6, MAPH-7);
+    blob(cx,cy, 3+R()*3.4, (tx,ty)=>{
+      const i2 = idx(tx,ty);
+      if(mark[i2]===M_GRAS && R()<0.72){ obj[i2] = O_TALL; objHP[i2] = 3; }
+    });
+  }
+  // stenrösen
+  for(let i=0;i<5;i++){
+    const a = R()*Math.PI*2, d = 12 + R()*22;
+    const cx = kl(Math.round(CX+Math.cos(a)*d), 5, MAPW-6), cy = kl(Math.round(CY+Math.sin(a)*d*0.7), 5, MAPH-6);
+    blob(cx,cy, 1.6+R()*1.6, (tx,ty)=>{
+      const i2 = idx(tx,ty);
+      if(mark[i2]===M_GRAS){ obj[i2] = O_STEN; objHP[i2] = 4; }
+    });
+  }
+  // malmådror (längre bort)
+  for(let i=0;i<4;i++){
+    const a = R()*Math.PI*2, d = 20 + R()*16;
+    const cx = kl(Math.round(CX+Math.cos(a)*d), 5, MAPW-6), cy = kl(Math.round(CY+Math.sin(a)*d*0.75), 5, MAPH-6);
+    blob(cx,cy, 1.2+R()*1.2, (tx,ty)=>{
+      const i2 = idx(tx,ty);
+      if(mark[i2]===M_GRAS){ obj[i2] = O_MALM; objHP[i2] = 4; }
+    });
+  }
+  // lingonbuskar (nära byn) + blommor
+  for(let i=0;i<9;i++){
+    const a = R()*Math.PI*2, d = 6 + R()*11;
+    const tx = kl(Math.round(CX+Math.cos(a)*d), 4, MAPW-5), ty = kl(Math.round(CY+Math.sin(a)*d), 4, MAPH-5);
+    const i2 = idx(tx,ty);
+    if(mark[i2]===M_GRAS && obj[i2]===O_TOM){ obj[i2] = O_BAR; objHP[i2] = 1; }
+  }
+  for(let i=0;i<220;i++){
+    const tx = (R()*MAPW)|0, ty = (R()*MAPH)|0, i2 = idx(tx,ty);
+    if(mark[i2]===M_GRAS && obj[i2]===O_TOM && R()<0.8) obj[i2] = O_BLOMMA;
+  }
+  // fri byplats i mitten + fria spawnränder vid kanterna
+  blob(CX,CY,5.5,(tx,ty)=>{ const i2 = idx(tx,ty); obj[i2] = (R()<0.1? O_BLOMMA : O_TOM); mark[i2] = M_GRAS; });
+  for(let ty=0;ty<MAPH;ty++) for(let tx=0;tx<MAPW;tx++){
+    if(tx<3||ty<3||tx>=MAPW-3||ty>=MAPH-3){ const i2 = idx(tx,ty); mark[i2] = M_GRAS; obj[i2] = O_TOM; }
+  }
+  // Långhuset
+  placeraBygg('langhus', CX-1, CY-1, true);
+  flowSmutsig = true; miniSmutsig = true;
+}
+
+// ---- bygga & riva ----
+function kanBygga(typ, tx, ty){
+  const def = BTYP[typ];
+  for(let y=ty; y<ty+def.h; y++) for(let x=tx; x<tx+def.w; x++){
+    if(!inne(x,y) || x<3||y<3||x>=MAPW-3||y>=MAPH-3) return false;
+    const i2 = idx(x,y);
+    if(mark[i2]!==M_GRAS) return false;
+    if(obj[i2]!==O_TOM && obj[i2]!==O_BLOMMA && obj[i2]!==O_STUBBE && obj[i2]!==O_GRUS) return false;
+    if(byggKarta[i2]>=0) return false;
+  }
+  if(def.fast!==false){
+    const cx = (tx+def.w/2)*TS, cy = (ty+def.h/2)*TS, rr = (Math.max(def.w,def.h)/2+0.6)*TS;
+    for(const e of [...hjaltar, ...folket, ...mobbar])
+      if(e.hp>0 && avst(e.x,e.y,cx,cy) < rr) return false;
+  }
+  return true;
+}
+function harRad(kost){ for(const k in kost) if(RES[k] < kost[k]) return false; return true; }
+function betala(kost){ for(const k in kost) RES[k] -= kost[k]; }
+function placeraBygg(typ, tx, ty, gratis){
+  const def = BTYP[typ];
+  if(!gratis && (!kanBygga(typ,tx,ty) || !harRad(def.kost))) return null;
+  if(!gratis) betala(def.kost);
+  const b = { typ, def, tx, ty, hp:def.hp, maxhp:def.hp, tid:0, arb:null, skytT:0, ny:0.35, oppen:0 };
+  let bi = byggnader.indexOf(null);
+  if(bi<0){ bi = byggnader.length; byggnader.push(b); } else byggnader[bi] = b;
+  for(let y=ty; y<ty+def.h; y++) for(let x=tx; x<tx+def.w; x++){
+    const i2 = idx(x,y);
+    obj[i2] = O_TOM; delete aterVax[i2];
+    byggKarta[i2] = bi;
+  }
+  flowSmutsig = true; miniSmutsig = true;
+  return b;
+}
+function skadaBygg(b, dmg){
+  if(!b || b.hp<=0) return;
+  b.hp -= dmg; b.tid = 0;
+  if(b.hp<=0) rivBygg(b, true);
+}
+function rivBygg(b, valdsamt){
+  const bi = byggnader.indexOf(b);
+  if(bi<0) return;
+  byggnader[bi] = null;
+  for(let y=b.ty; y<b.ty+b.def.h; y++) for(let x=b.tx; x<b.tx+b.def.w; x++){
+    const i2 = idx(x,y);
+    if(byggKarta[i2]===bi) byggKarta[i2] = -1;
+    if(valdsamt) obj[i2] = O_GRUS;
+  }
+  if(b.arb){ b.arb.jobb = null; b.arb.hem = null; b.arb.rutt = null; b.arb.fas = 'ledig'; }
+  flowSmutsig = true; miniSmutsig = true;
+  if(valdsamt){
+    spela('krossa'); skaka(5,0.3);
+    for(let i=0;i<14;i++) partiklar.push({x:(b.tx+b.def.w/2)*TS+slump(-14,14), y:(b.ty+b.def.h/2)*TS+slump(-14,14),
+      vx:slump(-60,60), vy:slump(-90,-20), liv:slump(0.4,0.9), farg:'#7a5c38', st:3});
+    if(b.typ==='langhus' && SPEL.lage==='spel') byNederlag();
+  }
+}
+
+// ---- fasthet & rörelse ----
+function tileFast(tx,ty,forMob){
+  if(!inne(tx,ty)) return true;
+  const i2 = idx(tx,ty);
+  if(mark[i2]===M_VATTEN) return true;
+  if(obj[i2]===O_TALL || obj[i2]===O_STEN || obj[i2]===O_MALM) return true;
+  const b = byggnader[byggKarta[i2]];
+  if(byggKarta[i2]>=0 && b){
+    if(b.def.fast===false) return false;
+    if(b.typ==='port' && !forMob) return false;   // byn passerar genom porten
+    return true;
+  }
+  return false;
+}
+function krockar(x,y,r,forMob){
+  const t0x = Math.floor((x-r)/TS), t1x = Math.floor((x+r)/TS);
+  const t0y = Math.floor((y-r)/TS), t1y = Math.floor((y+r)/TS);
+  for(let ty=t0y; ty<=t1y; ty++) for(let tx=t0x; tx<=t1x; tx++){
+    if(!tileFast(tx,ty,forMob)) continue;
+    const nx = kl(x, tx*TS, tx*TS+TS), ny = kl(y, ty*TS, ty*TS+TS);
+    if((x-nx)*(x-nx)+(y-ny)*(y-ny) < r*r) return true;
+  }
+  return false;
+}
+function flyttaEnhet(e, dx, dy, r, forMob){
+  const nx = kl(e.x+dx, r+2, PXW-r-2), ny = kl(e.y+dy, r+2, PXH-r-2);
+  if(!krockar(nx, e.y, r, forMob)) e.x = nx;
+  if(!krockar(e.x, ny, r, forMob)) e.y = ny;
+}
+
+// ---- flödesfält: trollens väg mot Långhuset ----
+let flode = new Float32Array(MAPW*MAPH);
+let flowSmutsig = true, flowTimer = 0;
+function flodeKost(tx,ty){
+  const i2 = idx(tx,ty);
+  if(mark[i2]===M_VATTEN) return -1;
+  if(obj[i2]===O_STEN || obj[i2]===O_MALM || obj[i2]===O_TALL) return -1;  // trollen går runt skog & berg
+  const b = byggnader[byggKarta[i2]];
+  if(byggKarta[i2]>=0 && b && b.def.fast!==false) return 18;               // murar: dyrt men krossbart
+  return 1;
+}
+function raknaFlode(){
+  flode.fill(1e9);
+  const heap = [];
+  const upp = (d,i)=>{ heap.push([d,i]); let j = heap.length-1;
+    while(j>0){ const p = (j-1)>>1; if(heap[p][0]<=heap[j][0]) break; const t = heap[p]; heap[p] = heap[j]; heap[j] = t; j = p; } };
+  const ner = ()=>{ const topp = heap[0], sista = heap.pop();
+    if(heap.length){ heap[0] = sista; let j = 0;
+      for(;;){ const a = 2*j+1, b = 2*j+2; let m = j;
+        if(a<heap.length && heap[a][0]<heap[m][0]) m = a;
+        if(b<heap.length && heap[b][0]<heap[m][0]) m = b;
+        if(m===j) break; const t = heap[m]; heap[m] = heap[j]; heap[j] = t; j = m; } }
+    return topp; };
+  for(const b of byggnader){
+    if(!b || b.typ!=='langhus') continue;
+    for(let y=b.ty; y<b.ty+b.def.h; y++) for(let x=b.tx; x<b.tx+b.def.w; x++){
+      const i2 = idx(x,y); flode[i2] = 0; upp(0,i2);
+    }
+  }
+  while(heap.length){
+    const [d,i2] = ner();
+    if(d > flode[i2]) continue;
+    const tx = i2%MAPW, ty = (i2/MAPW)|0;
+    for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){
+      const nx = tx+dx, ny = ty+dy;
+      if(!inne(nx,ny)) continue;
+      const c = flodeKost(nx,ny);
+      if(c<0) continue;
+      const j = idx(nx,ny), nd = d+c;
+      if(nd < flode[j]){ flode[j] = nd; upp(nd,j); }
+    }
+  }
+}
+function flodeSteg(tx,ty){
+  // bästa grannen nedåt i fältet; null om vi står i en återvändsgränd
+  let bast = null, bv = inne(tx,ty)? flode[idx(tx,ty)] : 1e9;
+  for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){
+    const nx = tx+dx, ny = ty+dy;
+    if(!inne(nx,ny)) continue;
+    const v = flode[idx(nx,ny)];
+    if(v < bv){ bv = v; bast = [nx,ny]; }
+  }
+  return bast;
+}
+
+// ---- A* för byborna ----
+const AS_G = new Float32Array(MAPW*MAPH);
+const AS_FRAN = new Int32Array(MAPW*MAPH);
+let AS_GEN = new Int32Array(MAPW*MAPH), asGen = 0;
+function folkPasserbar(tx,ty,malI){
+  if(!inne(tx,ty)) return false;
+  const i2 = idx(tx,ty);
+  if(i2===malI) return true;
+  if(mark[i2]===M_VATTEN) return false;
+  if(obj[i2]===O_TALL || obj[i2]===O_STEN || obj[i2]===O_MALM) return false;
+  const b = byggnader[byggKarta[i2]];
+  if(byggKarta[i2]>=0 && b && b.def.fast!==false) return true;
+  if(byggKarta[i2]>=0 && b) return b.typ==='port';
+  return true;
+}
+function sokVag(fx,fy,tx,ty){
+  if(!inne(fx,fy)||!inne(tx,ty)) return null;
+  asGen++;
+  const malI = idx(tx,ty), startI = idx(fx,fy);
+  const heap = [];
+  const upp = (f,i)=>{ heap.push([f,i]); let j = heap.length-1;
+    while(j>0){ const p = (j-1)>>1; if(heap[p][0]<=heap[j][0]) break; const t = heap[p]; heap[p] = heap[j]; heap[j] = t; j = p; } };
+  const ner = ()=>{ const topp = heap[0], sista = heap.pop();
+    if(heap.length){ heap[0] = sista; let j = 0;
+      for(;;){ const a = 2*j+1, b = 2*j+2; let m = j;
+        if(a<heap.length && heap[a][0]<heap[m][0]) m = a;
+        if(b<heap.length && heap[b][0]<heap[m][0]) m = b;
+        if(m===j) break; const t = heap[m]; heap[m] = heap[j]; heap[j] = t; j = m; } }
+    return topp; };
+  AS_G[startI] = 0; AS_GEN[startI] = asGen; AS_FRAN[startI] = -1;
+  upp(Math.abs(tx-fx)+Math.abs(ty-fy), startI);
+  let pops = 0;
+  while(heap.length && pops++ < 3500){
+    const [,i2] = ner();
+    if(i2===malI){
+      const vag = [];
+      let c = malI;
+      while(c>=0 && c!==startI){ vag.push([c%MAPW,(c/MAPW)|0]); c = AS_FRAN[c]; }
+      vag.reverse();
+      return vag;
+    }
+    const cx = i2%MAPW, cy = (i2/MAPW)|0;
+    for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){
+      const nx = cx+dx, ny = cy+dy;
+      if(!folkPasserbar(nx,ny,malI)) continue;
+      const j = idx(nx,ny), ng = AS_G[i2]+1;
+      if(AS_GEN[j]===asGen && ng >= AS_G[j]) continue;
+      AS_G[j] = ng; AS_GEN[j] = asGen; AS_FRAN[j] = i2;
+      upp(ng + Math.abs(tx-nx)+Math.abs(ty-ny), j);
+    }
+  }
+  return null;
+}
+// närmaste tile med visst naturobjekt (spiralsökning från en punkt)
+function narmasteObj(fx,fy,typ,maxR){
+  let bast = null, bd = 1e9;
+  const r = maxR||34;
+  for(let ty=Math.max(0,fy-r); ty<=Math.min(MAPH-1,fy+r); ty++)
+    for(let tx=Math.max(0,fx-r); tx<=Math.min(MAPW-1,fx+r); tx++){
+      if(obj[idx(tx,ty)]!==typ) continue;
+      const d = Math.abs(tx-fx)+Math.abs(ty-fy);
+      if(d<bd){ bd = d; bast = [tx,ty]; }
+    }
+  return bast;
+}
+// ledig granntile intill en tile / byggnad (för att stå och jobba)
+function granTill(tx,ty){
+  for(const [dx,dy] of [[0,1],[1,0],[-1,0],[0,-1],[1,1],[-1,1],[1,-1],[-1,-1]]){
+    const nx = tx+dx, ny = ty+dy;
+    if(inne(nx,ny) && folkPasserbar(nx,ny,-1)) return [nx,ny];
+  }
+  return null;
+}
+function granTillBygg(b){
+  for(let y=b.ty-1; y<=b.ty+b.def.h; y++) for(let x=b.tx-1; x<=b.tx+b.def.w; x++){
+    const kant = (y===b.ty-1||y===b.ty+b.def.h||x===b.tx-1||x===b.tx+b.def.w);
+    if(kant && inne(x,y) && folkPasserbar(x,y,-1)) return [x,y];
+  }
+  return null;
+}
+function narmastLager(x,y){
+  let bast = null, bd = 1e9;
+  for(const b of byggnader){
+    if(!b || !b.def.lager || b.hp<=0) continue;
+    const d = avst(x,y,(b.tx+b.def.w/2)*TS,(b.ty+b.def.h/2)*TS);
+    if(d<bd){ bd = d; bast = b; }
+  }
+  return bast;
+}
+
+// ---- kameran ----
+let kamX = 0, kamY = 0;
+function uppdKamera(dt, direkt){
+  let cx = PXW/2, cy = PXH/2, n = 0;
+  for(const h of hjaltar){ cx += h.x; cy += h.y; n++; }
+  if(n){ cx = (cx-PXW/2)/n; cy = (cy-PXH/2)/n; }
+  const mx = kl(cx-VIEW_W/2, 0, PXW-VIEW_W), my = kl(cy-VIEW_H/2, 0, PXH-VIEW_H);
+  if(direkt){ kamX = mx; kamY = my; }
+  else { kamX = mix(kamX, mx, Math.min(1, dt*3.2)); kamY = mix(kamY, my, Math.min(1, dt*3.2)); }
+  // koppel: ingen hjälte får hamna utanför bild
+  for(const h of hjaltar){
+    h.x = kl(h.x, kamX+20, kamX+VIEW_W-20);
+    h.y = kl(h.y, kamY+20, kamY+VIEW_H-20);
+  }
+}
+let miniSmutsig = true;
+</script>
+<script>
+'use strict';
+/* ===================== GRAFIK =====================
+   Allt ritas proceduralt: vikingaby med torvtak, tallskog,
+   vättar och troll. Djupsortering på fot-y. */
+function utext(txt,x,y,st,farg,just,kant){
+  g.font = 'bold '+st+'px Trebuchet MS';
+  g.textAlign = just||'center'; g.textBaseline = 'middle';
+  g.lineWidth = Math.max(2, st/7); g.strokeStyle = kant||'#171017';
+  g.strokeText(txt,x,y);
+  g.fillStyle = farg; g.fillText(txt,x,y);
+}
+function skugga(x,y,w){
+  g.fillStyle = 'rgba(10,14,8,0.28)';
+  g.beginPath(); g.ellipse(x,y,w,w*0.38,0,0,7); g.fill();
+}
+
+/* ---- terräng ---- */
+function ritaMark(){
+  const t0x = Math.max(0, Math.floor(kamX/TS)), t1x = Math.min(MAPW-1, Math.floor((kamX+VIEW_W)/TS));
+  const t0y = Math.max(0, Math.floor(kamY/TS)), t1y = Math.min(MAPH-1, Math.floor((kamY+VIEW_H)/TS));
+  for(let ty=t0y; ty<=t1y; ty++) for(let tx=t0x; tx<=t1x; tx++){
+    const i2 = idx(tx,ty), px = tx*TS, py = ty*TS, br = brus2(tx,ty);
+    const m = mark[i2];
+    if(m===M_VATTEN){
+      g.fillStyle = br<0.5? '#2e5f9e':'#2a568f'; g.fillRect(px,py,TS,TS);
+      if(brus2(tx*3,ty*7)>0.72){
+        const våg = Math.sin(tid*1.8 + tx*1.7 + ty*2.3);
+        if(våg>0.3){ g.fillStyle = 'rgba(120,170,220,0.5)'; g.fillRect(px+4+((våg*6)|0), py+TS/2, 8, 2); }
+      }
+    } else if(m===M_STRAND){
+      g.fillStyle = br<0.5? '#d8c07a':'#cdb46e'; g.fillRect(px,py,TS,TS);
+      if(br>0.8){ g.fillStyle = '#c0a75f'; g.fillRect(px+((br*17)|0)%18+2, py+((br*31)|0)%18+2, 3, 2); }
+    } else {
+      g.fillStyle = br<0.45? '#4e8f3a' : br<0.9? '#478535' : '#40792f';
+      g.fillRect(px,py,TS,TS);
+      if(brus2(tx*7+3,ty*5+1)>0.86){ g.fillStyle = '#54984012'; g.fillStyle = 'rgba(84,152,64,0.5)';
+        g.fillRect(px+3,py+5,2,4); g.fillRect(px+13,py+12,2,4); }
+    }
+    const o = obj[i2];
+    if(o===O_BLOMMA){
+      const c = ['#efe6d0','#ffd97a','#e893b8'][((br*37)|0)%3];
+      g.fillStyle = c; g.fillRect(px+6+((br*13)|0)%9, py+6+((br*29)|0)%9, 3,3);
+      g.fillStyle = '#3c7030'; g.fillRect(px+7+((br*13)|0)%9, py+9+((br*29)|0)%9, 1,3);
+    } else if(o===O_STUBBE){
+      g.fillStyle = '#6b4b28'; g.beginPath(); g.ellipse(px+12,py+13,6,4.5,0,0,7); g.fill();
+      g.fillStyle = '#a8895c'; g.beginPath(); g.ellipse(px+12,py+12,5,3.6,0,0,7); g.fill();
+    } else if(o===O_GRUS){
+      g.fillStyle = '#7d7466';
+      g.fillRect(px+4,py+6,5,4); g.fillRect(px+13,py+12,6,4); g.fillRect(px+9,py+16,4,3); g.fillRect(px+15,py+4,4,3);
+    }
+  }
+}
+
+/* ---- naturobjekt (djupsorterade) ---- */
+function ritaTall(tx,ty){
+  const px = tx*TS+TS/2, py = ty*TS+TS-2;
+  const br = brus2(tx,ty), h = 30+br*14, sv = Math.sin(tid*1.1+tx*2.1+ty)*1.4;
+  skugga(px,py+1,10);
+  g.fillStyle = '#5d4426'; g.fillRect(px-2, py-7, 4, 8);
+  const gron = ['#194d2a','#1f5c33','#2a7040'];
+  for(let i=0;i<3;i++){
+    const w = 13-(i*3.4), by = py-6-i*(h/3.6), fx = px+sv*(i/2);
+    g.fillStyle = gron[i];
+    g.beginPath(); g.moveTo(fx, by-h/2.6); g.lineTo(fx-w, by); g.lineTo(fx+w, by); g.closePath(); g.fill();
+  }
+}
+function ritaSten(tx,ty){
+  const px = tx*TS+TS/2, py = ty*TS+TS-3, br = brus2(tx,ty);
+  skugga(px,py+1,10);
+  g.fillStyle = '#6f6f78'; g.beginPath(); g.ellipse(px-4,py-4,8,7,0,0,7); g.fill();
+  g.fillStyle = '#8b8b93'; g.beginPath(); g.ellipse(px+3,py-6,7,6.4,0,0,7); g.fill();
+  g.fillStyle = '#a8a8b0'; g.beginPath(); g.ellipse(px+1,py-9,4,3,0,0,7); g.fill();
+  if(br>0.5){ g.fillStyle = '#5a5a63'; g.fillRect(px-8,py-2,4,3); }
+}
+function ritaMalm(tx,ty){
+  const px = tx*TS+TS/2, py = ty*TS+TS-3;
+  skugga(px,py+1,10);
+  g.fillStyle = '#4c4450'; g.beginPath(); g.ellipse(px-3,py-5,8,7,0,0,7); g.fill();
+  g.fillStyle = '#5f5560'; g.beginPath(); g.ellipse(px+4,py-6,6.4,5.6,0,0,7); g.fill();
+  g.fillStyle = '#e8a13c';
+  g.fillRect(px-5,py-8,3,3); g.fillRect(px+3,py-9,3,2); g.fillRect(px,py-4,2,3);
+}
+function ritaBar(tx,ty){
+  const px = tx*TS+TS/2, py = ty*TS+TS-4;
+  skugga(px,py+2,8);
+  g.fillStyle = '#2f6b35'; g.beginPath(); g.ellipse(px,py-4,9,7,0,0,7); g.fill();
+  g.fillStyle = '#3c7f42'; g.beginPath(); g.ellipse(px-3,py-7,5,4,0,0,7); g.fill();
+  if(objHP[idx(tx,ty)]>0){
+    g.fillStyle = '#c33b3b';
+    g.fillRect(px-5,py-6,3,3); g.fillRect(px+2,py-8,3,3); g.fillRect(px-1,py-3,3,3);
+  }
+}
+
+/* ---- byggnader ---- */
+function ritaTorvtak(x,y,w,h,res){
+  g.fillStyle = '#4b7530'; g.fillRect(x,y,w,h);
+  g.fillStyle = '#5d8f3c'; g.fillRect(x+1,y+1,w-2,h-2);
+  for(let i=0;i<Math.floor(w/9);i++){
+    g.fillStyle = 'rgba(120,170,80,0.45)';
+    g.fillRect(x+3+i*9, y+2+((brus2(i,x|0)*h/2)|0), 4, 2);
+  }
+  if(res){ g.fillStyle = '#3c5c26'; g.fillRect(x, y+h/2-1, w, 2); }
+}
+function ritaTimmer(x,y,w,h){
+  g.fillStyle = '#6b4b28'; g.fillRect(x,y,w,h);
+  g.fillStyle = '#8a6337'; g.fillRect(x+1,y+1,w-2,h-2);
+  for(let i=1;i<h/6;i++){ g.fillStyle = 'rgba(70,48,24,0.55)'; g.fillRect(x+1, y+i*6, w-2, 1); }
+}
+function ritaBygg(b){
+  const d = b.def, px = b.tx*TS, py = b.ty*TS, w = d.w*TS, h = d.h*TS;
+  g.save();
+  if(b.tid<0.22) g.translate(slump(-1.6,1.6), slump(-1.2,1.2));
+  if(b.ny>0){ const s = 1-(b.ny/0.35)*0.4; g.translate(px+w/2, py+h); g.scale(s,s); g.translate(-(px+w/2), -(py+h)); }
+  const natt = SPEL.fas!=='dag';
+  switch(b.typ){
+    case 'langhus':{
+      skugga(px+w/2, py+h-2, w*0.52);
+      ritaTimmer(px+3, py+22, w-6, h-24);
+      // gavlar + stort torvtak
+      ritaTorvtak(px-3, py+8, w+6, 22, true);
+      g.fillStyle = '#4b7530';
+      g.beginPath(); g.moveTo(px+w/2, py-6); g.lineTo(px-3, py+12); g.lineTo(px+w+3, py+12); g.closePath(); g.fill();
+      g.fillStyle = '#5d8f3c';
+      g.beginPath(); g.moveTo(px+w/2, py-2); g.lineTo(px+2, py+11); g.lineTo(px+w-2, py+11); g.closePath(); g.fill();
+      // draksniderier
+      g.strokeStyle = '#c89334'; g.lineWidth = 3; g.lineCap='round';
+      g.beginPath(); g.moveTo(px+4,py+10); g.quadraticCurveTo(px-5,py+2, px+1,py-6); g.stroke();
+      g.beginPath(); g.moveTo(px+w-4,py+10); g.quadraticCurveTo(px+w+5,py+2, px+w-1,py-6); g.stroke();
+      // dörr + fönster
+      g.fillStyle = '#3a2814'; g.fillRect(px+w/2-7, py+h-18, 14, 18);
+      g.fillStyle = natt? '#ffd97a':'#241a10';
+      g.fillRect(px+10, py+34, 7, 7); g.fillRect(px+w-17, py+34, 7, 7);
+      break; }
+    case 'stuga':{
+      skugga(px+w/2, py+h-2, w*0.5);
+      ritaTimmer(px+3, py+14, w-6, h-16);
+      ritaTorvtak(px, py+2, w, 15, true);
+      g.fillStyle = '#3a2814'; g.fillRect(px+w/2-5, py+h-13, 10, 13);
+      g.fillStyle = natt? '#ffd97a':'#241a10'; g.fillRect(px+7, py+22, 6, 6);
+      break; }
+    case 'koja': case 'brott': case 'gruva':{
+      skugga(px+w/2, py+h-2, w*0.5);
+      ritaTimmer(px+4, py+16, w-8, h-18);
+      ritaTorvtak(px+1, py+4, w-2, 14, false);
+      g.fillStyle = '#3a2814'; g.fillRect(px+w/2-5, py+h-12, 10, 12);
+      // skylt med jobbfärg + hög med råvaror
+      const jf = b.typ==='koja'? '#8a6337' : b.typ==='brott'? '#8b8b93' : '#e8a13c';
+      g.fillStyle = '#241a10'; g.fillRect(px+w-14, py+18, 11, 11);
+      g.fillStyle = jf; g.fillRect(px+w-12, py+20, 7, 7);
+      if(b.typ==='koja'){ g.fillStyle = '#7a5c38'; g.fillRect(px+3, py+h-8, 8, 3); g.fillRect(px+4, py+h-11, 8, 3); }
+      if(b.typ==='brott'){ g.fillStyle = '#8b8b93'; g.beginPath(); g.ellipse(px+8,py+h-6,6,4,0,0,7); g.fill(); }
+      if(b.typ==='gruva'){ g.fillStyle = '#4c4450'; g.beginPath(); g.ellipse(px+8,py+h-6,6,4,0,0,7); g.fill();
+        g.fillStyle = '#e8a13c'; g.fillRect(px+5,py+h-8,2,2); g.fillRect(px+10,py+h-7,2,2); }
+      break; }
+    case 'aker':{
+      g.fillStyle = '#6b4e2c'; g.fillRect(px+1,py+1,w-2,h-2);
+      for(let r=0;r<4;r++){
+        g.fillStyle = '#59401f'; g.fillRect(px+2, py+4+r*11, w-4, 3);
+        const vaxt = Math.min(1, b.tid/25);
+        g.fillStyle = vaxt>0.7? '#d9b64a' : '#7fb349';
+        for(let c2=0;c2<d.w*3;c2++){
+          const hh = 2+vaxt*5;
+          g.fillRect(px+5+c2*7, py+4+r*11-hh+2, 2, hh);
+        }
+      }
+      g.strokeStyle = '#6b4b28'; g.lineWidth = 2; g.strokeRect(px+1,py+1,w-2,h-2);
+      break; }
+    case 'bod':{
+      skugga(px+w/2, py+h-2, w*0.48);
+      ritaTimmer(px+3, py+12, w-6, h-14);
+      g.fillStyle = '#59401f'; g.fillRect(px, py+2, w, 12);
+      g.fillStyle = '#6f5228'; g.fillRect(px+1, py+3, w-2, 9);
+      g.fillStyle = '#8a6337';
+      g.beginPath(); g.ellipse(px+9,py+h-6,5,6,0,0,7); g.fill();
+      g.beginPath(); g.ellipse(px+19,py+h-5,5,6,0,0,7); g.fill();
+      g.fillStyle = '#5d4426'; g.fillRect(px+5,py+h-9,8,2); g.fillRect(px+15,py+h-8,8,2);
+      break; }
+    case 'smedja':{
+      skugga(px+w/2, py+h-2, w*0.5);
+      g.fillStyle = '#6f6f78'; g.fillRect(px+3, py+14, w-6, h-16);
+      g.fillStyle = '#8b8b93'; g.fillRect(px+4, py+15, w-8, h-18);
+      g.fillStyle = '#4a4a52'; g.fillRect(px+w-14, py-4, 9, 20);
+      ritaTorvtak(px, py+6, w-12, 12, false);
+      g.fillStyle = '#33333a'; g.fillRect(px+8, py+h-13, 12, 5);   // städ
+      g.fillStyle = '#241a10'; g.fillRect(px+10, py+h-8, 3, 8); g.fillRect(px+15, py+h-8, 3, 8);
+      const glod = 0.55+0.45*Math.sin(tid*6);
+      g.fillStyle = 'rgba(255,140,40,'+(0.35+glod*0.4)+')'; g.fillRect(px+w-22, py+h-14, 8, 8);
+      if(Math.random()<0.12) partiklar.push({x:px+w-9, y:py-4, vx:slump(-4,4), vy:-22, liv:1.4, farg:'#8a8a90', st:3, rok:true});
+      break; }
+    case 'palissad':{
+      const koppla = riktn=>{ const nb = bygget(b.tx+riktn[0], b.ty+riktn[1]); return nb && (nb.typ==='palissad'||nb.typ==='port'||nb.typ==='stenmur'); };
+      g.fillStyle = '#5d4426';
+      for(let i=0;i<3;i++){
+        const lx = px+3+i*7;
+        g.fillRect(lx, py+3, 5, TS-4);
+        g.beginPath(); g.moveTo(lx,py+4); g.lineTo(lx+2.5,py-2); g.lineTo(lx+5,py+4); g.closePath(); g.fill();
+      }
+      g.fillStyle = '#7a5c38';
+      for(let i=0;i<3;i++) g.fillRect(px+4+i*7, py+3, 2, TS-5);
+      if(koppla([1,0])||koppla([-1,0])){ g.fillStyle = '#6b4b28'; g.fillRect(px, py+8, TS, 3); g.fillRect(px, py+16, TS, 3); }
+      break; }
+    case 'stenmur':{
+      g.fillStyle = '#5a5a63'; g.fillRect(px+1, py-2, TS-2, TS+1);
+      g.fillStyle = '#7d7d85'; g.fillRect(px+2, py-1, TS-4, TS-2);
+      g.fillStyle = '#94949c';
+      g.fillRect(px+3,py+1,8,5); g.fillRect(px+13,py+1,7,5); g.fillRect(px+3,py+8,6,5); g.fillRect(px+11,py+8,9,5); g.fillRect(px+5,py+15,9,4);
+      break; }
+    case 'port':{
+      g.fillStyle = '#5d4426'; g.fillRect(px, py-4, 4, TS+4); g.fillRect(px+TS-4, py-4, 4, TS+4);
+      g.fillStyle = '#6b4b28'; g.fillRect(px, py-6, TS, 5);
+      const opp = b.oppen;
+      g.fillStyle = '#8a6337';
+      g.fillRect(px+3, py+2+opp*14, TS-6, Math.max(2,(TS-6)*(1-opp)));
+      g.fillStyle = '#59401f';
+      if(opp<0.5) g.fillRect(px+TS/2-1, py+3, 2, (TS-8)*(1-opp));
+      break; }
+    case 'torn':{
+      skugga(px+TS/2, py+TS-2, 10);
+      g.fillStyle = '#5d4426';
+      g.fillRect(px+3, py-14, 3, TS+12); g.fillRect(px+TS-6, py-14, 3, TS+12);
+      g.fillRect(px+2, py+4, TS-4, 3);
+      ritaTimmer(px+1, py-22, TS-2, 12);
+      g.fillStyle = '#4b7530'; g.beginPath();
+      g.moveTo(px+TS/2, py-32); g.lineTo(px-2, py-21); g.lineTo(px+TS+2, py-21); g.closePath(); g.fill();
+      // skytten
+      g.fillStyle = '#3f5a70'; g.fillRect(px+TS/2-3, py-19, 6, 7);
+      g.fillStyle = '#d8a877'; g.fillRect(px+TS/2-2, py-23, 4, 4);
+      break; }
+    case 'fackla':{
+      g.fillStyle = '#5d4426'; g.fillRect(px+TS/2-2, py+6, 4, TS-8);
+      const fl = Math.sin(tid*9+b.tx*3)*2;
+      g.fillStyle = '#ff8c28'; g.beginPath(); g.ellipse(px+TS/2, py+2+fl*0.4, 4.5, 6.5,0,0,7); g.fill();
+      g.fillStyle = '#ffd97a'; g.beginPath(); g.ellipse(px+TS/2, py+3+fl*0.3, 2.4, 3.6,0,0,7); g.fill();
+      break; }
+  }
+  // skador
+  if(b.hp < b.maxhp*0.55 && b.typ!=='fackla'){
+    g.strokeStyle = 'rgba(20,14,8,0.75)'; g.lineWidth = 1.5;
+    g.beginPath(); g.moveTo(px+w*0.3, py+h*0.25); g.lineTo(px+w*0.45, py+h*0.5); g.lineTo(px+w*0.35, py+h*0.75); g.stroke();
+    if(b.hp < b.maxhp*0.3){ g.beginPath(); g.moveTo(px+w*0.7, py+h*0.2); g.lineTo(px+w*0.6, py+h*0.55); g.lineTo(px+w*0.75, py+h*0.8); g.stroke(); }
+  }
+  if(b.hp < b.maxhp && b.typ!=='aker'){
+    g.fillStyle = '#171017'; g.fillRect(px+2, py-8, w-4, 4);
+    g.fillStyle = b.hp<b.maxhp*0.3? '#d94f3c' : '#8fd45a';
+    g.fillRect(px+3, py-7, (w-6)*kl(b.hp/b.maxhp,0,1), 2);
+  }
+  g.restore();
+}
+
+/* ---- hjältar ---- */
+function ritaHjalte(h){
+  const nere = h.nere>0;
+  g.save();
+  g.translate(h.x, h.y);
+  if(h.blink>0 && Math.floor(h.blink*14)%2===0) g.globalAlpha = 0.35;
+  skugga(0, 2, 9);
+  if(nere){
+    g.rotate(Math.PI/2);
+    g.globalAlpha *= 0.85;
+  }
+  const bob = nere? 0 : Math.abs(Math.sin(h.gang*9))*2;
+  const rx = h.fx, ry = h.fy;           // riktning
+  // ben
+  g.fillStyle = '#3a2c1c';
+  g.fillRect(-5, -4-bob*0.3, 4, 7); g.fillRect(1, -4-bob*0.3+ (nere?0:Math.sin(h.gang*9)*1.6), 4, 7);
+  // kropp (tunika i hjältens färg)
+  g.fillStyle = h.ch.farg;
+  g.fillRect(-7, -16-bob, 14, 13);
+  g.fillStyle = 'rgba(0,0,0,0.22)'; g.fillRect(-7, -7-bob, 14, 4);
+  // bälte
+  g.fillStyle = '#59401f'; g.fillRect(-7, -8-bob, 14, 2);
+  // huvud
+  g.fillStyle = '#d8a877'; g.fillRect(-5, -26-bob, 10, 10);
+  // frisyr/hjälm per hjälte
+  const k = h.ch.id;
+  if(k==='sigrid'){ g.fillStyle = '#b8b8c2'; g.fillRect(-6,-28-bob,12,5);
+    g.fillStyle = '#efe6d0'; g.beginPath(); g.moveTo(-6,-26-bob); g.lineTo(-10,-31-bob); g.lineTo(-5,-28-bob); g.closePath(); g.fill();
+    g.beginPath(); g.moveTo(6,-26-bob); g.lineTo(10,-31-bob); g.lineTo(5,-28-bob); g.closePath(); g.fill(); }
+  if(k==='torbjorn'){ g.fillStyle = '#a8562c'; g.fillRect(-5,-19-bob,10,4); g.fillRect(-4,-28-bob,8,3); }
+  if(k==='ylva'){ g.fillStyle = '#3d5a3a'; g.beginPath(); g.moveTo(-6,-24-bob); g.lineTo(0,-32-bob); g.lineTo(6,-24-bob); g.closePath(); g.fill(); }
+  if(k==='rune'){ g.fillStyle = '#8a8a90'; g.fillRect(-5,-19-bob,10,3); g.fillStyle='#59401f'; g.fillRect(-6,-13-bob,12,8); }
+  if(k==='embla'){ g.fillStyle = '#e8c86a'; g.fillRect(-6,-28-bob,12,4); g.fillRect(-7,-25-bob,3,9); g.fillRect(4,-25-bob,3,9); }
+  // ögon åt hållet man tittar
+  g.fillStyle = '#241a10';
+  g.fillRect(-3+rx*2, -23-bob, 2, 2); g.fillRect(2+rx*2, -23-bob, 2, 2);
+  // vapen — svingas vid attack
+  const sving = h.atkT>0 ? Math.sin((1-h.atkT/h.atkMax)*Math.PI)*1.6 : 0;
+  g.save();
+  g.translate(rx>=0? 8 : -8, -13-bob);
+  g.rotate((rx>=0?1:-1) * (0.5 - sving));
+  const vap = h.ch.vapen;
+  if(vap==='svard'){ g.fillStyle = '#c9c9d4'; g.fillRect(-1.5, -16, 3, 15); g.fillStyle = '#c89334'; g.fillRect(-4, -2, 8, 3); }
+  if(vap==='yxa'){ g.fillStyle = '#7a5c38'; g.fillRect(-1.5, -15, 3, 15); g.fillStyle = '#b8b8c2';
+    g.beginPath(); g.moveTo(-1,-15); g.quadraticCurveTo(-9,-13,-8,-6); g.lineTo(-1,-9); g.closePath(); g.fill(); }
+  if(vap==='bage'){ g.strokeStyle = '#7a5c38'; g.lineWidth = 2.5;
+    g.beginPath(); g.arc(0,-6, 9, -1.2, 1.2); g.stroke();
+    g.strokeStyle = '#e8e0cc'; g.lineWidth = 1;
+    g.beginPath(); g.moveTo(Math.cos(-1.2)*9, -6+Math.sin(-1.2)*9); g.lineTo(Math.cos(1.2)*9, -6+Math.sin(1.2)*9); g.stroke(); }
+  if(vap==='slagga'){ g.fillStyle = '#7a5c38'; g.fillRect(-1.5,-14,3,14); g.fillStyle = '#6f6f78'; g.fillRect(-6,-18,12,7); }
+  if(vap==='stav'){ g.fillStyle = '#5d4426'; g.fillRect(-1.5,-18,3,18); g.fillStyle = '#8fd4ff';
+    g.beginPath(); g.arc(0,-19,3.4,0,7); g.fill(); }
+  g.restore();
+  if(nere){
+    utext('!', 0, -34, 13, '#d94f3c');
+  }
+  g.restore();
+  // namn + återupplivningsring
+  utext(h.ch.namn, h.x, h.y-36, 9, h.ch.farg);
+  if(nere && h.revP>0){
+    g.strokeStyle = '#8fd45a'; g.lineWidth = 3;
+    g.beginPath(); g.arc(h.x, h.y, 14, -Math.PI/2, -Math.PI/2 + h.revP*Math.PI*2); g.stroke();
+  }
+}
+
+/* ---- bybor ---- */
+const JOBBFARG = { ved:'#5da13e', sten:'#8b8b93', malm:'#e8a13c', mat:'#d9b64a' };
+function ritaFolk(f){
+  if(f.gomd) return;
+  g.save(); g.translate(f.x, f.y);
+  skugga(0,1,6);
+  const bob = Math.abs(Math.sin(f.gang*10))*1.4;
+  const arb = f.arbT>0 ? Math.sin(tid*13)*2 : 0;
+  g.fillStyle = '#3a2c1c'; g.fillRect(-3,-3,3,4); g.fillRect(1,-3,3,4);
+  g.fillStyle = '#7a6544'; g.fillRect(-5,-12-bob,10,10);
+  g.fillStyle = '#d8a877'; g.fillRect(-3.5,-19-bob,7,7);
+  const hf = f.jobb? JOBBFARG[f.jobb] : '#a89e88';
+  g.fillStyle = hf;
+  g.beginPath(); g.moveTo(-4.5,-18-bob); g.lineTo(0,-24-bob-arb*0.4); g.lineTo(4.5,-18-bob); g.closePath(); g.fill();
+  if(f.arbT>0){
+    g.fillStyle = '#7a5c38'; g.save(); g.translate(6,-10-bob); g.rotate(0.6+arb*0.3); g.fillRect(-1,-8,2,9); g.restore();
+  }
+  if(f.barN>0){
+    const bf = {tra:'#8a6337', sten:'#8b8b93', jarn:'#e8a13c', mat:'#d9b64a'}[f.bar]||'#fff';
+    g.fillStyle = bf; g.fillRect(-4,-27-bob,8,5);
+    g.fillStyle = 'rgba(0,0,0,0.25)'; g.fillRect(-4,-24-bob,8,2);
+  }
+  g.restore();
+}
+
+/* ---- vättar & troll ---- */
+function ritaMob(m){
+  g.save(); g.translate(m.x, m.y);
+  const st = m.stenad, kind = m.slag;
+  const kropp = st>0? '#8a8a90' : m.def.farg;
+  const mork = st>0? '#5c5c64' : m.def.morkFarg;
+  const hopp = kind==='gast'? Math.sin(tid*3+m.x*0.02)*3-6 : 0;
+  if(kind!=='gast') skugga(0, 2, m.def.r*0.9);
+  if(kind==='gast') g.globalAlpha = 0.62+0.15*Math.sin(tid*4);
+  g.translate(0, hopp);
+  const r = m.def.r, gs = Math.sin(m.gang*11)*0.12;
+  if(kind==='kung'){
+    // Bergakungen — jättetroll av sten
+    g.fillStyle = mork; g.beginPath(); g.ellipse(0,-r*0.9, r*1.05, r*1.15+gs*6, 0,0,7); g.fill();
+    g.fillStyle = kropp; g.beginPath(); g.ellipse(0,-r, r*0.92, r+gs*6, 0,0,7); g.fill();
+    g.fillStyle = '#5c7040';
+    g.beginPath(); g.ellipse(-r*0.4,-r*1.5, r*0.34, r*0.2, -0.4,0,7); g.fill();
+    g.beginPath(); g.ellipse(r*0.35,-r*0.6, r*0.3, r*0.18, 0.5,0,7); g.fill();
+    // armar
+    g.fillStyle = kropp;
+    g.beginPath(); g.ellipse(-r*1.05, -r*0.7+gs*8, r*0.34, r*0.62, 0.25,0,7); g.fill();
+    g.beginPath(); g.ellipse(r*1.05, -r*0.7-gs*8, r*0.34, r*0.62, -0.25,0,7); g.fill();
+    // stenkrona
+    g.fillStyle = '#6f6f78';
+    for(let i=-2;i<=2;i++){
+      g.beginPath(); g.moveTo(i*r*0.3-r*0.12, -r*1.8); g.lineTo(i*r*0.3, -r*2.25-Math.abs(i)*-r*0.06); g.lineTo(i*r*0.3+r*0.12, -r*1.8); g.closePath(); g.fill();
+    }
+    // ögon
+    g.fillStyle = st>0? '#5c5c64' : '#ffb03c';
+    g.fillRect(-r*0.4, -r*1.45, r*0.22, r*0.14); g.fillRect(r*0.18, -r*1.45, r*0.22, r*0.14);
+    // betar
+    g.fillStyle = '#efe6d0';
+    g.fillRect(-r*0.3, -r*0.95, r*0.12, r*0.2); g.fillRect(r*0.2, -r*0.95, r*0.12, r*0.2);
+  } else {
+    const langd = kind==='troll'? 1.25 : 1;
+    // kropp
+    g.fillStyle = mork; g.beginPath(); g.ellipse(0, -r*0.85, r*1.02, r*1.02*langd+gs*4, 0,0,7); g.fill();
+    g.fillStyle = kropp; g.beginPath(); g.ellipse(0, -r*0.9, r*0.9, r*0.92*langd+gs*4, 0,0,7); g.fill();
+    // öron
+    g.fillStyle = kropp;
+    g.beginPath(); g.moveTo(-r*0.5,-r*1.4); g.lineTo(-r*1.15,-r*1.9); g.lineTo(-r*0.25,-r*1.65); g.closePath(); g.fill();
+    g.beginPath(); g.moveTo(r*0.5,-r*1.4); g.lineTo(r*1.15,-r*1.9); g.lineTo(r*0.25,-r*1.65); g.closePath(); g.fill();
+    // ögon (glöder i mörkret)
+    g.fillStyle = st>0? '#5c5c64' : (SPEL.fas==='dag'? '#241a10' : m.def.ogon||'#ffd97a');
+    const ox = (m.vx||0)>0? 1.5 : (m.vx||0)<0? -1.5 : 0;
+    g.fillRect(-r*0.42+ox, -r*1.1, r*0.26, r*0.2); g.fillRect(r*0.16+ox, -r*1.1, r*0.26, r*0.2);
+    // detaljer per sort
+    if(kind==='troll'){
+      g.fillStyle = '#efe6d0'; g.fillRect(-r*0.32,-r*0.55,r*0.14,r*0.24); g.fillRect(r*0.2,-r*0.55,r*0.14,r*0.24);
+      g.fillStyle = '#5d4426';
+      g.save(); g.rotate(0.5+gs*2); g.fillRect(r*0.7, -r*1.6, r*0.34, r*1.5); g.restore();
+      g.fillStyle = '#5c7040'; g.beginPath(); g.ellipse(-r*0.3,-r*1.55, r*0.3, r*0.16, -0.3,0,7); g.fill();
+    }
+    if(kind==='kastare'){
+      g.fillStyle = '#8b8b93'; g.beginPath(); g.arc(r*0.75, -r*1.7+gs*5, r*0.42, 0, 7); g.fill();
+    }
+    if(kind==='eld'){
+      const fl = Math.sin(tid*10+m.x)*1.5;
+      g.fillStyle = '#ffd97a'; g.beginPath(); g.ellipse(0,-r*1.75+fl*0.4, r*0.3, r*0.5,0,0,7); g.fill();
+      g.fillStyle = '#ff8c28'; g.beginPath(); g.ellipse(0,-r*1.7+fl*0.3, r*0.18, r*0.3,0,0,7); g.fill();
+    }
+    if(kind==='gast'){
+      g.fillStyle = kropp;
+      g.beginPath(); g.moveTo(-r*0.8,-r*0.3); g.quadraticCurveTo(-r*0.3, r*0.5, 0, -r*0.1);
+      g.quadraticCurveTo(r*0.3, r*0.5, r*0.8, -r*0.3); g.closePath(); g.fill();
+    }
+    if(m.elit){ g.fillStyle = '#d94f3c'; g.fillRect(-r*0.6, -r*1.55, r*1.2, r*0.16); }
+  }
+  // sprickor när de förstenas
+  if(st>0.25){
+    g.strokeStyle = 'rgba(30,30,36,0.8)'; g.lineWidth = 1.4;
+    g.beginPath(); g.moveTo(-m.def.r*0.5,-m.def.r*1.3); g.lineTo(-m.def.r*0.1,-m.def.r*0.8); g.lineTo(-m.def.r*0.4,-m.def.r*0.3); g.stroke();
+    if(st>0.6){ g.beginPath(); g.moveTo(m.def.r*0.4,-m.def.r*1.4); g.lineTo(m.def.r*0.15,-m.def.r*0.7); g.stroke(); }
+  }
+  g.restore();
+  // hp-mätare
+  if(m.hp < m.maxhp && !m.stenad){
+    const w = m.slag==='kung'? 60 : 20;
+    g.fillStyle = '#171017'; g.fillRect(m.x-w/2, m.y-m.def.r*2.4-8, w, 4);
+    g.fillStyle = m.slag==='kung'? '#ffb03c':'#d94f3c';
+    g.fillRect(m.x-w/2+1, m.y-m.def.r*2.4-7, (w-2)*kl(m.hp/m.maxhp,0,1), 2);
+  }
+}
+
+/* ---- projektiler & partiklar ---- */
+function ritaPil(p){
+  g.save(); g.translate(p.x,p.y);
+  if(p.typ==='rock'){
+    g.rotate(tid*7);
+    g.fillStyle = '#6f6f78'; g.beginPath(); g.arc(0,0,5,0,7); g.fill();
+    g.fillStyle = '#8b8b93'; g.beginPath(); g.arc(-1,-1,2.4,0,7); g.fill();
+  } else {
+    g.rotate(Math.atan2(p.vy,p.vx));
+    g.strokeStyle = '#7a5c38'; g.lineWidth = 2;
+    g.beginPath(); g.moveTo(-6,0); g.lineTo(4,0); g.stroke();
+    g.fillStyle = '#c9c9d4'; g.beginPath(); g.moveTo(7,0); g.lineTo(2,-2.4); g.lineTo(2,2.4); g.closePath(); g.fill();
+    g.fillStyle = '#efe6d0'; g.fillRect(-7,-1.6,3,3.2);
+  }
+  g.restore();
+}
+function ritaPartiklar(){
+  for(const p of partiklar){
+    g.globalAlpha = kl(p.liv/(p.rok?1.4:0.6),0,1)*(p.rok?0.5:1);
+    g.fillStyle = p.farg;
+    g.fillRect(p.x-p.st/2, p.y-p.st/2, p.st, p.st);
+  }
+  g.globalAlpha = 1;
+}
+
+/* ---- mörkret & ljuset ---- */
+const morkDuk = document.createElement('canvas');
+morkDuk.width = VIEW_W; morkDuk.height = VIEW_H;
+const mg = morkDuk.getContext('2d');
+function morkerNiva(){
+  if(SPEL.lage!=='spel') return 0;
+  if(SPEL.fas==='dag') return SPEL.tidKvar<10 ? (10-SPEL.tidKvar)/10*0.45 : 0;
+  if(SPEL.fas==='natt') return 0.76;
+  if(SPEL.fas==='gryning') return kl(0.76*(1-SPEL.klocka/6), 0, 1);
+  return 0;
+}
+function ljuscirkel(x,y,r,varm){
+  const sx = x-kamX, sy = y-kamY;
+  if(sx<-r||sy<-r||sx>VIEW_W+r||sy>VIEW_H+r) return;
+  const gr = mg.createRadialGradient(sx,sy,r*0.15,sx,sy,r);
+  gr.addColorStop(0,'rgba(0,0,0,1)'); gr.addColorStop(1,'rgba(0,0,0,0)');
+  mg.fillStyle = gr;
+  mg.fillRect(sx-r,sy-r,r*2,r*2);
+}
+function ritaMorker(){
+  const niv = morkerNiva();
+  if(niv<=0.01) return;
+  mg.globalCompositeOperation = 'source-over';
+  mg.clearRect(0,0,VIEW_W,VIEW_H);
+  mg.fillStyle = 'rgba(9,10,34,'+niv+')';
+  mg.fillRect(0,0,VIEW_W,VIEW_H);
+  mg.globalCompositeOperation = 'destination-out';
+  for(const h of hjaltar) if(h.nere<=0) ljuscirkel(h.x, h.y-10, 82);
+  for(const b of byggnader){
+    if(!b) continue;
+    const cx = (b.tx+b.def.w/2)*TS, cy = (b.ty+b.def.h/2)*TS;
+    if(b.typ==='fackla') ljuscirkel(cx, cy-6, 105+Math.sin(tid*8+b.tx*2)*7);
+    else if(b.typ==='langhus') ljuscirkel(cx, cy, 120);
+    else if(b.typ==='smedja') ljuscirkel(cx, cy, 70);
+    else if(b.typ==='torn') ljuscirkel(cx, cy-16, 58);
+    else if(b.typ==='stuga'||b.typ==='koja'||b.typ==='brott'||b.typ==='gruva') ljuscirkel(cx, cy, 42);
+  }
+  for(const m of mobbar) if(m.slag==='eld') ljuscirkel(m.x, m.y-8, 55);
+  g.drawImage(morkDuk, kamX, kamY);
+}
+</script>
+<script>
+'use strict';
+/* ===================== HUD, MENYER & SKÄRMAR ===================== */
+function ritaIkon(slag,x,y,s){
+  s = s||1;
+  g.save(); g.translate(x,y); g.scale(s,s);
+  if(slag==='tra'){ g.fillStyle = '#8a6337'; g.fillRect(-7,-3,14,6);
+    g.fillStyle = '#a8895c'; g.beginPath(); g.ellipse(7,0,2.6,3,0,0,7); g.fill();
+    g.fillStyle = '#6b4b28'; g.beginPath(); g.ellipse(7,0,1.3,1.6,0,0,7); g.fill(); }
+  if(slag==='sten'){ g.fillStyle = '#6f6f78'; g.beginPath(); g.ellipse(-2,1,5,4,0,0,7); g.fill();
+    g.fillStyle = '#8b8b93'; g.beginPath(); g.ellipse(3,-1,4.4,4,0,0,7); g.fill(); }
+  if(slag==='mat'){ g.fillStyle = '#d9b64a'; for(let i=-1;i<=1;i++){ g.fillRect(i*4-1,-6,2,10); }
+    g.fillStyle = '#c4a038'; g.fillRect(-6,4,12,3); }
+  if(slag==='jarn'){ g.fillStyle = '#9a9aa4'; g.beginPath();
+    g.moveTo(-7,3); g.lineTo(-4,-3); g.lineTo(4,-3); g.lineTo(7,3); g.closePath(); g.fill();
+    g.fillStyle = '#c9c9d4'; g.fillRect(-4,-3,8,2); }
+  if(slag==='folk'){ g.fillStyle = '#a89e88'; g.beginPath(); g.moveTo(-5,-1); g.lineTo(0,-7); g.lineTo(5,-1); g.closePath(); g.fill();
+    g.fillStyle = '#d8a877'; g.fillRect(-2.6,-1,5.2,4); g.fillStyle = '#7a6544'; g.fillRect(-3.6,3,7.2,4); }
+  if(slag==='vatte'){ g.fillStyle = '#7fae52'; g.beginPath(); g.ellipse(0,0,6,5.4,0,0,7); g.fill();
+    g.beginPath(); g.moveTo(-3,-4); g.lineTo(-8,-8); g.lineTo(-1,-6); g.closePath(); g.fill();
+    g.beginPath(); g.moveTo(3,-4); g.lineTo(8,-8); g.lineTo(1,-6); g.closePath(); g.fill();
+    g.fillStyle = '#ffd97a'; g.fillRect(-3,-2,2,2); g.fillRect(1,-2,2,2); }
+  g.restore();
+}
+function ritaPanel(x,y,w,h){
+  g.fillStyle = 'rgba(24,17,10,0.88)'; g.fillRect(x,y,w,h);
+  g.strokeStyle = '#8a6337'; g.lineWidth = 2; g.strokeRect(x+1,y+1,w-2,h-2);
+}
+
+/* ---- minikartan ---- */
+const miniDuk = document.createElement('canvas');
+miniDuk.width = MAPW; miniDuk.height = MAPH;
+const mig = miniDuk.getContext('2d');
+function uppdMini(){
+  const bild = mig.createImageData(MAPW,MAPH);
+  for(let i=0;i<MAPW*MAPH;i++){
+    let r=78,gr2=143,b=58;
+    if(mark[i]===M_VATTEN){ r=46;gr2=95;b=158; }
+    else if(mark[i]===M_STRAND){ r=216;gr2=192;b=122; }
+    else if(obj[i]===O_TALL){ r=25;gr2=77;b=42; }
+    else if(obj[i]===O_STEN){ r=139;gr2=139;b=147; }
+    else if(obj[i]===O_MALM){ r=232;gr2=161;b=60; }
+    bild.data[i*4]=r; bild.data[i*4+1]=gr2; bild.data[i*4+2]=b; bild.data[i*4+3]=255;
+  }
+  mig.putImageData(bild,0,0);
+  miniSmutsig = false;
+}
+function ritaMini(){
+  if(miniSmutsig) uppdMini();
+  const MW = 144, MH = 96, mx = VIEW_W-MW-10, my = VIEW_H-MH-10;
+  ritaPanel(mx-3,my-3,MW+6,MH+6);
+  g.drawImage(miniDuk, mx, my, MW, MH);
+  const sx = MW/MAPW, sy = MH/MAPH;
+  for(const b of byggnader){
+    if(!b) continue;
+    g.fillStyle = b.typ==='langhus'? '#ffd97a' : '#c89334';
+    g.fillRect(mx+b.tx*sx, my+b.ty*sy, Math.max(1.5,b.def.w*sx), Math.max(1.5,b.def.h*sy));
+  }
+  for(const f of folket) if(!f.gomd){ g.fillStyle = '#efe6d0'; g.fillRect(mx+f.x/TS*sx-0.7, my+f.y/TS*sy-0.7, 1.6, 1.6); }
+  for(const m of mobbar){ g.fillStyle = m.slag==='kung'? '#ff6a3c':'#d94f3c'; const s2 = m.slag==='kung'?4:2.2; g.fillRect(mx+m.x/TS*sx-s2/2, my+m.y/TS*sy-s2/2, s2, s2); }
+  for(const h of hjaltar){ g.fillStyle = h.ch.farg; g.fillRect(mx+h.x/TS*sx-1.4, my+h.y/TS*sy-1.4, 3, 3); }
+  g.strokeStyle = 'rgba(239,230,208,0.7)'; g.lineWidth = 1;
+  g.strokeRect(mx+kamX/TS*sx, my+kamY/TS*sy, VIEW_W/TS*sx, VIEW_H/TS*sy);
+  // varningspilar där nästa våg kommer
+  if(SPEL.fas==='natt' || (SPEL.fas==='dag' && SPEL.tidKvar<12)){
+    for(const kant of SPEL.natt.kanter||[]){
+      const bl = Math.sin(tid*6)>0;
+      if(!bl) continue;
+      g.fillStyle = '#ff6a3c';
+      const px2 = kant==='V'? mx+3 : kant==='O'? mx+MW-3 : mx+MW/2;
+      const py2 = kant==='N'? my+3 : kant==='S'? my+MH-3 : my+MH/2;
+      g.beginPath(); g.arc(px2,py2,3.2,0,7); g.fill();
+    }
+  }
+}
+
+/* ---- övre HUD ---- */
+function ritaHUD(){
+  // resurser
+  ritaPanel(8,8,236,30);
+  const rr = [['tra',RES.tra],['sten',RES.sten],['mat',RES.mat],['jarn',RES.jarn]];
+  rr.forEach((p,i)=>{
+    ritaIkon(p[0], 26+i*58, 23, 0.95);
+    utext(''+Math.floor(p[1]), 44+i*58, 23, 13, '#efe6d0', 'left');
+  });
+  // dag & klocka
+  ritaPanel(VIEW_W/2-86, 8, 172, 34);
+  utext('DAG '+SPEL.dag, VIEW_W/2-46, 25, 15, '#ffd97a');
+  const cx = VIEW_W/2+18, cy = 34;
+  g.strokeStyle = '#59401f'; g.lineWidth = 2;
+  g.beginPath(); g.arc(cx, cy, 20, Math.PI, 0); g.stroke();
+  let frak = 0;
+  if(SPEL.fas==='dag') frak = 1 - SPEL.tidKvar/SPEL.dagLangd;
+  else frak = 1;
+  const sa = Math.PI + frak*Math.PI;
+  if(SPEL.fas==='dag'){
+    g.fillStyle = '#ffd97a'; g.beginPath(); g.arc(cx+Math.cos(sa)*20, cy+Math.sin(sa)*20, 5,0,7); g.fill();
+    g.fillStyle = '#ffb03c'; g.beginPath(); g.arc(cx+Math.cos(sa)*20, cy+Math.sin(sa)*20, 2.6,0,7); g.fill();
+  } else {
+    g.fillStyle = '#c9d4e8'; g.beginPath(); g.arc(cx, cy-18, 6,0,7); g.fill();
+    g.fillStyle = 'rgba(24,17,10,1)'; g.beginPath(); g.arc(cx+3, cy-20, 5,0,7); g.fill();
+  }
+  if(SPEL.fas==='natt'){
+    const kvar = mobbar.length + (SPEL.natt.ko? SPEL.natt.ko.length:0);
+    ritaIkon('vatte', VIEW_W/2+52, 24, 0.9);
+    utext('×'+kvar, VIEW_W/2+70, 24, 13, '#d94f3c', 'left');
+  } else if(SPEL.tidKvar<12 && SPEL.lage==='spel'){
+    if(Math.sin(tid*7)>0) utext('NATTEN KOMMER!', VIEW_W/2, 56, 15, '#ff6a3c');
+  }
+  // bybor + Långhusets hälsa
+  ritaPanel(VIEW_W-198, 8, 190, 30);
+  ritaIkon('folk', VIEW_W-180, 23, 1);
+  utext(folket.length+'/'+folkTak(), VIEW_W-166, 23, 13, '#efe6d0', 'left');
+  const lh = byggnader.find(b=>b && b.typ==='langhus');
+  if(lh){
+    utext('⌂', VIEW_W-118, 22, 15, '#ffd97a', 'left');
+    g.fillStyle = '#171017'; g.fillRect(VIEW_W-102, 17, 86, 12);
+    g.fillStyle = lh.hp<lh.maxhp*0.3? '#d94f3c' : '#8fd45a';
+    g.fillRect(VIEW_W-100, 19, 82*kl(lh.hp/lh.maxhp,0,1), 8);
+  }
+  // hjältekort nere till vänster
+  hjaltar.forEach((h,i)=>{
+    const hx = 8, hy = VIEW_H-34-(hjaltar.length-1-i)*30;
+    ritaPanel(hx,hy,164,26);
+    g.fillStyle = h.ch.farg; g.beginPath(); g.arc(hx+13,hy+13,8,0,7); g.fill();
+    g.fillStyle = '#241a10'; g.fillRect(hx+9,hy+10,2.6,2.6); g.fillRect(hx+14,hy+10,2.6,2.6);
+    utext(h.ch.namn, hx+58, hy+9, 10, '#efe6d0');
+    g.fillStyle = '#171017'; g.fillRect(hx+26, hy+16, 64, 7);
+    g.fillStyle = h.hp<h.maxhp*0.3? '#d94f3c':'#8fd45a';
+    g.fillRect(hx+27, hy+17, 62*kl(h.hp/h.maxhp,0,1), 5);
+    // kraftmätare
+    g.fillStyle = '#171017'; g.fillRect(hx+96, hy+16, 40, 7);
+    g.fillStyle = h.kraftCd<=0? '#8fd4ff':'#3f5a70';
+    g.fillRect(hx+97, hy+17, 38*(1-kl(h.kraftCd/h.kraftMax,0,1)), 5);
+    if(h.kraftCd<=0 && Math.sin(tid*5)>0) utext('KRAFT!', hx+116, hy+9, 8, '#8fd4ff');
+    else utext(h.ch.kraft, hx+116, hy+9, 8, '#a89e88');
+    if(h.nere>0) utext('NERE!', hx+150, hy+13, 10, '#d94f3c');
+  });
+  ritaMini();
+}
+
+/* ---- byggläge (spöke + panel över hjälten, i världskoordinater) ---- */
+function ritaByggUI(h){
+  const val = BYGGLISTA[h.bySel], def = BTYP[val];
+  const [gx,gy] = byggRuta(h);
+  const ok = kanBygga(val,gx,gy) && harRad(def.kost);
+  // spökbyggnad
+  g.globalAlpha = 0.5;
+  g.fillStyle = ok? '#8fd45a':'#d94f3c';
+  g.fillRect(gx*TS, gy*TS, def.w*TS, def.h*TS);
+  g.globalAlpha = 1;
+  g.strokeStyle = ok? '#8fd45a':'#d94f3c'; g.lineWidth = 2;
+  g.strokeRect(gx*TS+1, gy*TS+1, def.w*TS-2, def.h*TS-2);
+  // panel
+  const px = h.x, py = h.y-66;
+  ritaPanel(px-92, py-16, 184, 44);
+  utext('◄ '+def.namn+' ►', px, py-4, 13, '#ffd97a');
+  let kx = px - 30*(Object.keys(def.kost).length) + 26;
+  for(const k in def.kost){
+    ritaIkon(k, kx, py+16, 0.75);
+    utext(''+def.kost[k], kx+13, py+16, 11, RES[k]>=def.kost[k]? '#efe6d0':'#d94f3c', 'left');
+    kx += 56;
+  }
+  if(Object.keys(def.kost).length===0) utext(def.info, px, py+16, 10, '#a89e88');
+}
+
+/* ---- smedjans disk (världskoordinater) ---- */
+const SMIDESLISTA = [
+  {ny:'yxor',   namn:'Yxor',    kost:[3,6], info:'Samla snabbare'},
+  {ny:'pilar',  namn:'Pilar',   kost:[4,7], info:'Tornen vässas'},
+  {ny:'vapen',  namn:'Vapen',   kost:[5,8], info:'Slå hårdare'},
+  {ny:'brynjor',namn:'Brynjor', kost:[5,8], info:'+30 liv'},
+];
+function ritaSmedjeUI(sm){
+  const cx = (sm.tx+sm.def.w/2)*TS, topY = sm.ty*TS-46;
+  SMIDESLISTA.forEach((u,i)=>{
+    const ux = cx-102+i*68 + 34 - 34, uy = topY;
+    const sx = cx - 102 + i*68;
+    const niva = SMIDE[u.ny], max = niva>=u.kost.length;
+    ritaPanel(sx-30, uy-14, 60, 40);
+    utext(u.namn, sx, uy-4, 10, '#efe6d0');
+    if(max) utext('MAX', sx, uy+14, 10, '#8fd45a');
+    else {
+      ritaIkon('jarn', sx-14, uy+15, 0.7);
+      utext(''+u.kost[niva], sx-2, uy+14, 11, RES.jarn>=u.kost[niva]? '#ffd97a':'#d94f3c', 'left');
+    }
+    for(let n=0;n<u.kost.length;n++){
+      g.fillStyle = n<niva? '#8fd45a':'#3a2f26';
+      g.fillRect(sx+12+n*7, uy+11, 5, 5);
+    }
+  });
+  utext('Ställ dig under och tryck YXA för att smida', cx, topY+38, 9, '#a89e88');
+}
+
+/* ---- lobbyn ---- */
+const HJALTAR_DEF = [
+  {id:'sigrid',  namn:'SIGRID',   farg:'#8fd4ff', vapen:'svard',  roll:'Sköldmö',     kraft:'SKÖLDVIRVEL', info:'Stark i strid — snurrar med svärdet'},
+  {id:'torbjorn',namn:'TORBJÖRN', farg:'#d94f3c', vapen:'yxa',    roll:'Timmerman',   kraft:'STORHUGG',    info:'Hugger dubbelt så mycket trä'},
+  {id:'ylva',    namn:'YLVA',     farg:'#a8e08a', vapen:'bage',   roll:'Jägarinna',   kraft:'PILREGN',     info:'Skjuter pilar på långt håll'},
+  {id:'rune',    namn:'RUNE',     farg:'#ffd97a', vapen:'slagga', roll:'Smed',        kraft:'STORSLÄGGA',  info:'Bygger och lagar dubbelt så fort'},
+  {id:'embla',   namn:'EMBLA',    farg:'#e893b8', vapen:'stav',   roll:'Läkekvinna',  kraft:'LIVSLJUS',    info:'Helar vänner som står nära'},
+];
+function ritaPortratt(ch,x,y,s){
+  g.save(); g.translate(x,y); g.scale(s,s);
+  g.fillStyle = ch.farg; g.fillRect(-11,-2,22,18);
+  g.fillStyle = '#d8a877'; g.fillRect(-8,-16,16,15);
+  const k = ch.id;
+  if(k==='sigrid'){ g.fillStyle = '#b8b8c2'; g.fillRect(-9,-19,18,7);
+    g.fillStyle = '#efe6d0'; g.beginPath(); g.moveTo(-9,-16); g.lineTo(-15,-24); g.lineTo(-7,-19); g.closePath(); g.fill();
+    g.beginPath(); g.moveTo(9,-16); g.lineTo(15,-24); g.lineTo(7,-19); g.closePath(); g.fill(); }
+  if(k==='torbjorn'){ g.fillStyle = '#a8562c'; g.fillRect(-8,-5,16,7); g.fillRect(-7,-19,14,4); }
+  if(k==='ylva'){ g.fillStyle = '#3d5a3a'; g.beginPath(); g.moveTo(-10,-13); g.lineTo(0,-25); g.lineTo(10,-13); g.closePath(); g.fill(); }
+  if(k==='rune'){ g.fillStyle = '#8a8a90'; g.fillRect(-8,-6,16,5); g.fillStyle = '#59401f'; g.fillRect(-9,1,18,10); }
+  if(k==='embla'){ g.fillStyle = '#e8c86a'; g.fillRect(-9,-19,18,5); g.fillRect(-11,-15,4,14); g.fillRect(7,-15,4,14); }
+  g.fillStyle = '#241a10'; g.fillRect(-4,-10,3,3); g.fillRect(2,-10,3,3);
+  g.restore();
+}
+function ritaLobby(){
+  // natthimmel
+  const grad = g.createLinearGradient(0,0,0,VIEW_H);
+  grad.addColorStop(0,'#0d0a1e'); grad.addColorStop(0.65,'#1c1530'); grad.addColorStop(1,'#241a2e');
+  g.fillStyle = grad; g.fillRect(0,0,VIEW_W,VIEW_H);
+  for(let i=0;i<70;i++){
+    const sx = (brus2(i,7)*VIEW_W)|0, sy = (brus2(i,13)*VIEW_H*0.55)|0;
+    g.globalAlpha = 0.3+0.7*Math.abs(Math.sin(tid*(0.4+brus2(i,3))+i));
+    g.fillStyle = '#efe6d0'; g.fillRect(sx,sy,2,2);
+  }
+  g.globalAlpha = 1;
+  g.fillStyle = '#e8e4d8'; g.beginPath(); g.arc(VIEW_W-160, 86, 38, 0, 7); g.fill();
+  g.fillStyle = '#c9c4b4'; g.beginPath(); g.arc(VIEW_W-172, 78, 7, 0, 7); g.fill();
+  g.beginPath(); g.arc(VIEW_W-148, 96, 5, 0, 7); g.fill();
+  // kulle med by + skog i siluett
+  g.fillStyle = '#151022';
+  g.beginPath(); g.moveTo(0,VIEW_H);
+  for(let x=0;x<=VIEW_W;x+=40) g.lineTo(x, VIEW_H-70-Math.sin(x*0.008)*26);
+  g.lineTo(VIEW_W,VIEW_H); g.closePath(); g.fill();
+  for(let i=0;i<12;i++){
+    const px = 40+i*82, py = VIEW_H-72-Math.sin(px*0.008)*26;
+    g.fillStyle = '#0e0b18';
+    g.beginPath(); g.moveTo(px,py-34); g.lineTo(px-11,py); g.lineTo(px+11,py); g.closePath(); g.fill();
+  }
+  // långhus-siluett med varmt fönster
+  g.fillStyle = '#0e0b18'; g.fillRect(VIEW_W/2-50, VIEW_H-118, 100, 48);
+  g.beginPath(); g.moveTo(VIEW_W/2-56, VIEW_H-116); g.lineTo(VIEW_W/2, VIEW_H-142); g.lineTo(VIEW_W/2+56, VIEW_H-116); g.closePath(); g.fill();
+  g.fillStyle = '#ffd97a'; g.fillRect(VIEW_W/2-12, VIEW_H-102, 9, 9); g.fillRect(VIEW_W/2+6, VIEW_H-102, 9, 9);
+  // glödande trollögon i skogsbrynet
+  for(let i=0;i<5;i++){
+    if(Math.sin(tid*0.7+i*2.3)<0.2) continue;
+    const px = 60+i*205+brus2(i,99)*60, py = VIEW_H-58+brus2(i,55)*20;
+    g.fillStyle = '#ffb03c'; g.fillRect(px,py,4,3); g.fillRect(px+8,py,4,3);
+  }
+  // titel
+  utext('TROLLNATT', VIEW_W/2, 74, 58, '#8fd4ff', 'center', '#101a3c');
+  utext('Bygg om dagen — försvara om natten', VIEW_W/2, 116, 16, '#c9d4e8');
+  // hjältekort
+  const antal = HJALTAR_DEF.length;
+  HJALTAR_DEF.forEach((ch,ci)=>{
+    const kx = VIEW_W/2 + (ci-(antal-1)/2)*150, ky = 240;
+    const jr = vantar.find(j=>j.ci===ci);
+    const tagen = hjaltar.some(p=>p.ch.id===ch.id);
+    ritaPanel(kx-64, ky-72, 128, 148);
+    if(jr){ g.strokeStyle = ch.farg; g.lineWidth = 3; g.strokeRect(kx-64, ky-72, 128, 148); }
+    g.globalAlpha = (jr||!tagen)? 1 : 0.35;
+    ritaPortratt(ch, kx, ky-24, 1.5);
+    utext(ch.namn, kx, ky+16, 15, ch.farg);
+    utext(ch.roll, kx, ky+32, 11, '#a89e88');
+    utext(ch.info, kx, ky+50, 8, '#c9d4e8');
+    utext('Kraft: '+ch.kraft, kx, ky+64, 8, '#8fd4ff');
+    g.globalAlpha = 1;
+    if(jr && jr.redo) utext('REDO!', kx, ky-58, 15, '#8fd45a');
+    else if(jr) utext('◄ ► välj — YXA = redo', kx, ky-60, 9, '#ffd97a');
+  });
+  if(vantar.length===0){
+    if(Math.sin(tid*3)>-0.2) utext('Skanna QR-koden med mobilen — eller tryck YXA (J) här för att spela med tangentbord', VIEW_W/2, 356, 14, '#efe6d0');
+  } else {
+    utext('Fler spelare kan skanna QR-koden och hoppa in!', VIEW_W/2, 356, 11, '#a89e88');
+  }
+  if(SPEL.startT>0) utext('Byn vaknar om '+Math.ceil(SPEL.startT)+'…', VIEW_W/2, 392, 22, '#ffd97a');
+  utext('Tangentbord: pilar/WASD gå · J=YXA · K=BYGG · L=KRAFT · M=musik · P=paus', VIEW_W/2, VIEW_H-40, 11, '#a89e88');
+  utext('Överlev 10 nätter — natt 10 kommer BERGAKUNGEN. Egen kod, grafik & musik.', VIEW_W/2, VIEW_H-20, 10, '#5a5142');
+}
+
+/* ---- slut & seger & paus ---- */
+function ritaSlut(){
+  g.fillStyle = 'rgba(20,8,8,0.82)'; g.fillRect(0,0,VIEW_W,VIEW_H);
+  utext('BYN HAR FALLIT', VIEW_W/2, 150, 46, '#d94f3c');
+  utext('Trollen krossade Långhuset under natt '+SPEL.dag, VIEW_W/2, 200, 16, '#efe6d0');
+  utext('Troll besegrade: '+statistik.dodade+'   Byggnader byggda: '+statistik.byggt+'   Bybor: '+statistik.folkFott, VIEW_W/2, 240, 13, '#a89e88');
+  utext('Smedjans uppgraderingar följer med till nästa försök', VIEW_W/2, 274, 12, '#8fd4ff');
+  if(SPEL.slutT<=0 && Math.sin(tid*4)>-0.3) utext('YXA = nytt försök', VIEW_W/2, 330, 20, '#ffd97a');
+}
+function ritaSegerBanner(){
+  const a = kl(SPEL.segerT<7? 1 : 8-SPEL.segerT, 0, 1);
+  g.globalAlpha = a;
+  g.fillStyle = 'rgba(20,16,4,0.6)'; g.fillRect(0,110,VIEW_W,150);
+  utext('BERGAKUNGEN ÄR BESEGRAD!', VIEW_W/2, 160, 38, '#ffd97a');
+  utext('Byn är räddad — ni är sagornas hjältar! Bygg vidare så länge ni vill.', VIEW_W/2, 210, 15, '#efe6d0');
+  g.globalAlpha = 1;
+}
+function ritaPaus(){
+  g.fillStyle = 'rgba(10,8,16,0.78)'; g.fillRect(0,0,VIEW_W,VIEW_H);
+  utext('PAUS', VIEW_W/2, 90, 38, '#ffd97a');
+  const rader = [
+    'Gå: styrspak / WASD / pilar',
+    'YXA (J): hugg träd · bryt sten · plocka bär · slåss · laga hus · handla i smedjan',
+    'BYGG (K): byggläge — BYGG bläddrar, YXA placerar, KRAFT avbryter',
+    'KRAFT (L): hjältens specialkraft',
+    'Bygg kojor så jobbar byborna åt er. Bygg murar före natten!',
+    'Trollen förstenas i gryningen. Natt 10: BERGAKUNGEN.',
+  ];
+  rader.forEach((r,i)=>utext(r, VIEW_W/2, 150+i*30, 13, '#efe6d0'));
+  utext('Smedjan: Yxor '+SMIDE.yxor+' · Pilar '+SMIDE.pilar+' · Vapen '+SMIDE.vapen+' · Brynjor '+SMIDE.brynjor, VIEW_W/2, 350, 12, '#8fd4ff');
+  utext('Världsfrö: '+varldFro+' · M = musik av/på · P = fortsätt', VIEW_W/2, 390, 11, '#a89e88');
+}
+
+/* ---- huvudritningen ---- */
+function ritaAllt(){
+  if(SPEL.lage==='lobby'){ ritaLobby(); return; }
+  g.fillStyle = '#100c14'; g.fillRect(0,0,VIEW_W,VIEW_H);
+  g.save();
+  let ox = -Math.round(kamX), oy = -Math.round(kamY);
+  if(skakT>0){ ox += slump(-skakA,skakA); oy += slump(-skakA,skakA); }
+  g.translate(ox,oy);
+  ritaMark();
+  // djupsorterad lista
+  const lista = [];
+  const t0x = Math.max(0, Math.floor(kamX/TS)-1), t1x = Math.min(MAPW-1, Math.floor((kamX+VIEW_W)/TS)+1);
+  const t0y = Math.max(0, Math.floor(kamY/TS)-2), t1y = Math.min(MAPH-1, Math.floor((kamY+VIEW_H)/TS)+2);
+  for(let ty2=t0y; ty2<=t1y; ty2++) for(let tx2=t0x; tx2<=t1x; tx2++){
+    const o = obj[idx(tx2,ty2)];
+    if(o===O_TALL) lista.push({y:ty2*TS+TS, fn:ritaTall, a:tx2, b:ty2});
+    else if(o===O_STEN) lista.push({y:ty2*TS+TS-4, fn:ritaSten, a:tx2, b:ty2});
+    else if(o===O_MALM) lista.push({y:ty2*TS+TS-4, fn:ritaMalm, a:tx2, b:ty2});
+    else if(o===O_BAR) lista.push({y:ty2*TS+TS-6, fn:ritaBar, a:tx2, b:ty2});
+  }
+  for(const b of byggnader){
+    if(!b) continue;
+    const by2 = (b.ty+b.def.h)*TS;
+    if(by2 < kamY-60 || b.ty*TS > kamY+VIEW_H+40) continue;
+    if((b.tx+b.def.w)*TS < kamX-40 || b.tx*TS > kamX+VIEW_W+40) continue;
+    lista.push({y: b.typ==='aker'? b.ty*TS+2 : by2-3, fn:ritaBygg, a:b});
+  }
+  for(const f of folket) if(!f.gomd) lista.push({y:f.y, fn:ritaFolk, a:f});
+  for(const m of mobbar) lista.push({y:m.y, fn:ritaMob, a:m});
+  for(const h of hjaltar) lista.push({y:h.y, fn:ritaHjalte, a:h});
+  lista.sort((p,q)=>p.y-q.y);
+  for(const e of lista) e.fn(e.a, e.b);
+  for(const p of pilar) ritaPil(p);
+  ritaPartiklar();
+  // byggspöken + smedjedisk
+  for(const h of hjaltar) if(h.byggPa && h.nere<=0) ritaByggUI(h);
+  for(const b of byggnader){
+    if(!b || b.typ!=='smedja') continue;
+    const cx = (b.tx+b.def.w/2)*TS, cy = (b.ty+b.def.h/2)*TS;
+    if(hjaltar.some(h=>avst(h.x,h.y,cx,cy)<86)) ritaSmedjeUI(b);
+  }
+  // svävande texter (världskoordinater)
+  for(const t of texter){
+    g.globalAlpha = kl(1.6-t.t,0,1);
+    utext(t.txt, t.x, t.y - t.t*26, t.stor?15:11, t.farg);
+    g.globalAlpha = 1;
+  }
+  ritaMorker();
+  g.restore();
+  ritaHUD();
+  // nya spelare mitt i spelet
+  vantar.forEach((jr,i)=>{
+    const ch = HJALTAR_DEF[jr.ci];
+    ritaPanel(VIEW_W/2-160, VIEW_H-46-i*34, 320, 28);
+    utext('NY SPELARE: ◄ ► välj', VIEW_W/2-72, VIEW_H-32-i*34, 11, '#efe6d0');
+    utext(ch.namn, VIEW_W/2+22, VIEW_H-32-i*34, 12, ch.farg);
+    utext('YXA = hoppa in!', VIEW_W/2+108, VIEW_H-32-i*34, 10, '#ffd97a');
+  });
+  if(SPEL.lage==='slut') ritaSlut();
+  if(SPEL.seger && SPEL.segerT<8) ritaSegerBanner();
+  if(SPEL.paus) ritaPaus();
+}
+</script>
+<script>
+'use strict';
+/* ===================== SPELLOGIK: HJÄLTAR, BYGGE & BYBOR ===================== */
+
+/* ---- input: tangentbord, lokal pekskärm, gamepad, nätmobiler ---- */
+const TANGENT = {}, TLATCH = {a:false,b:false,c:false,x:0};
+window.addEventListener('keydown', e=>{
+  if(e.repeat) return;
+  TANGENT[e.code] = true;
+  if(e.code==='KeyJ'||e.code==='KeyZ'||e.code==='Space') TLATCH.a = true;
+  if(e.code==='KeyK'||e.code==='KeyX'||e.code==='KeyB') TLATCH.b = true;
+  if(e.code==='KeyL'||e.code==='KeyC'||e.code==='KeyV') TLATCH.c = true;
+  if(e.code==='ArrowLeft') TLATCH.x = -1;
+  if(e.code==='ArrowRight') TLATCH.x = 1;
+  if(e.code==='KeyM') musikPa = !musikPa;
+  if((e.code==='KeyP'||e.code==='Escape') && SPEL.lage==='spel') SPEL.paus = !SPEL.paus;
+  if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code)) e.preventDefault();
+  vackLjud();
+});
+window.addEventListener('keyup', e=>{ TANGENT[e.code] = false; });
+const PEKPAD = {x:0,y:0,a:false,b:false,c:false,aT:false,bT:false,cT:false,xT:0};
+let GPFORR = {};
+let gpCache = [];
+function pollGamepads(){
+  const ut = [];
+  try{
+    const gps = navigator.getGamepads? navigator.getGamepads() : [];
+    for(let i=0;i<gps.length;i++){
+      const gp = gps[i]; if(!gp) continue;
+      const forr = GPFORR[i]||{a:false,b:false,c:false};
+      let x = gp.axes[0]||0, y = gp.axes[1]||0;
+      if(gp.buttons[14]&&gp.buttons[14].pressed) x = -1;
+      if(gp.buttons[15]&&gp.buttons[15].pressed) x = 1;
+      if(gp.buttons[12]&&gp.buttons[12].pressed) y = -1;
+      if(gp.buttons[13]&&gp.buttons[13].pressed) y = 1;
+      if(Math.abs(x)<0.25) x = 0; if(Math.abs(y)<0.25) y = 0;
+      const a = !!(gp.buttons[0]&&gp.buttons[0].pressed)||!!(gp.buttons[2]&&gp.buttons[2].pressed);
+      const b = !!(gp.buttons[1]&&gp.buttons[1].pressed);
+      const c = !!(gp.buttons[3]&&gp.buttons[3].pressed);
+      ut.push({id:'g'+i, x, y, aH:a,bH:b,cH:c, aT:a&&!forr.a, bT:b&&!forr.b, cT:c&&!forr.c});
+      GPFORR[i] = {a,b,c};
+    }
+  }catch(e){}
+  return ut;
+}
+function lasInput(pad){
+  if(pad==='kb'){
+    let x = 0, y = 0;
+    if(TANGENT.ArrowLeft||TANGENT.KeyA) x -= 1;
+    if(TANGENT.ArrowRight||TANGENT.KeyD) x += 1;
+    if(TANGENT.ArrowUp||TANGENT.KeyW) y -= 1;
+    if(TANGENT.ArrowDown||TANGENT.KeyS) y += 1;
+    const r = {x,y, aT:TLATCH.a, bT:TLATCH.b, cT:TLATCH.c, xT:TLATCH.x,
+      aH:!!(TANGENT.KeyJ||TANGENT.KeyZ||TANGENT.Space), bH:!!(TANGENT.KeyK||TANGENT.KeyX), cH:!!(TANGENT.KeyL||TANGENT.KeyC)};
+    TLATCH.a = TLATCH.b = TLATCH.c = false; TLATCH.x = 0;
+    return r;
+  }
+  if(pad==='lokal'){
+    const r = {x:PEKPAD.x, y:PEKPAD.y, aT:PEKPAD.aT, bT:PEKPAD.bT, cT:PEKPAD.cT, xT:PEKPAD.xT||0,
+      aH:PEKPAD.a, bH:PEKPAD.b, cH:PEKPAD.c};
+    PEKPAD.aT = PEKPAD.bT = PEKPAD.cT = false; PEKPAD.xT = 0;
+    return r;
+  }
+  if(pad && pad[0]==='g'){
+    const gp = gpCache.find(q=>q.id===pad);
+    return gp || {x:0,y:0,aT:false,bT:false,cT:false,aH:false,bH:false,cH:false,xT:0};
+  }
+  const s = LANK.pads[pad];
+  if(s && s.vid){
+    const st = s.st;
+    const r = {x:st.x, y:st.y, aT:st.aT||false, bT:st.bT||false, cT:st.cT||false, xT:st.xT||0,
+      aH:st.a, bH:st.b, cH:st.c};
+    st.aT = st.bT = st.cT = false; st.xT = 0;
+    return r;
+  }
+  return {x:0,y:0,aT:false,bT:false,cT:false,aH:false,bH:false,cH:false,xT:0};
+}
+
+/* ---- hjältar ---- */
+const HJALTE_STAT = {
+  sigrid:{hp:82, dmg:11, fart:150}, torbjorn:{hp:92, dmg:9, fart:140},
+  ylva:{hp:64, dmg:7, fart:168}, rune:{hp:86, dmg:8, fart:145}, embla:{hp:70, dmg:7, fart:150},
+};
+function gorHjalte(ci, pad, slot){
+  const ch = HJALTAR_DEF[ci], st = HJALTE_STAT[ch.id];
+  const lh = byggnader.find(b=>b && b.typ==='langhus');
+  const bx = lh? (lh.tx+1.5)*TS : PXW/2, by = lh? (lh.ty+lh.def.h)*TS+22 : PXH/2;
+  return { slot, pad, ci, ch,
+    x: bx-40+slot*22, y: by+8+(slot%2)*16, fx:0, fy:1, gang:0,
+    hp: st.hp+SMIDE.brynjor*30, maxhp: st.hp+SMIDE.brynjor*30,
+    atkT:0, atkMax:0.3, autoT:0, kraftCd:0, kraftMax:12,
+    byggPa:false, bySel:0, nere:0, revP:0, blink:1.5 };
+}
+function skadaHjalte(h, dmg){
+  if(h.blink>0 || h.nere>0) return;
+  h.hp -= dmg; h.blink = 0.5;
+  spela('aj');
+  if(h.hp<=0){ h.hp = 0; h.nere = 15; h.revP = 0; h.byggPa = false; spela('nere');
+    svavText(h.x, h.y-30, h.ch.namn+' är nere!', '#d94f3c', true); }
+}
+function skadaMob(m, dmg, fran){
+  if(m.stenad>0) return;
+  m.hp -= dmg;
+  if(fran){ const d = Math.max(12, avst(fran.x,fran.y,m.x,m.y));
+    m.x += (m.x-fran.x)/d*7; m.y += (m.y-fran.y)/d*7; }
+  spela('traff');
+  partiklar.push({x:m.x, y:m.y-8, vx:slump(-30,30), vy:slump(-60,-20), liv:0.4, farg:m.def.farg, st:3});
+  if(m.hp<=0) dodaMob(m, true);
+}
+function framfor(h, d){ return [h.x + h.fx*d, h.y + h.fy*d - 6]; }
+
+function byggRuta(h){
+  const val = BYGGLISTA[h.bySel], def = BTYP[val];
+  const fx2 = h.x + h.fx*TS*1.5, fy2 = h.y + h.fy*TS*1.5 - 6;
+  return [ kl(Math.round(fx2/TS - def.w/2), 0, MAPW-def.w),
+           kl(Math.round(fy2/TS - def.h/2), 0, MAPH-def.h) ];
+}
+function samlaKD(){ return 0.42 * (1 - 0.18*SMIDE.yxor); }
+function heroDmg(h){ return h.ch.id==='ylva'? 9+3*SMIDE.vapen : HJALTE_STAT[h.ch.id].dmg*(1+0.4*SMIDE.vapen); }
+
+function utforHandling(h){
+  // 1) byggläge → placera
+  if(h.byggPa){
+    const val = BYGGLISTA[h.bySel], def = BTYP[val];
+    const [gx,gy] = byggRuta(h);
+    if(kanBygga(val,gx,gy) && harRad(def.kost)){
+      placeraBygg(val,gx,gy);
+      statistik.byggt++; spela('bygg');
+      svavText((gx+def.w/2)*TS, gy*TS, def.namn+'!', '#8fd45a');
+    } else spela('nej');
+    return;
+  }
+  // 2) smedjans disk
+  for(const b of byggnader){
+    if(!b || b.typ!=='smedja' || b.hp<=0) continue;
+    const cx = (b.tx+b.def.w/2)*TS, topY = b.ty*TS-46;
+    if(avst(h.x,h.y,cx,(b.ty+1)*TS) > 86) continue;
+    let bast = -1, bd = 44;
+    SMIDESLISTA.forEach((u,i)=>{
+      const sx = cx-102+i*68;
+      const d = Math.abs(h.x-sx);
+      if(h.y < b.ty*TS+18 && d < bd){ bd = d; bast = i; }
+    });
+    if(bast>=0){
+      const u = SMIDESLISTA[bast], niva = SMIDE[u.ny];
+      if(niva>=u.kost.length){ spela('nej'); return; }
+      if(RES.jarn < u.kost[niva]){ spela('nej'); svavText(h.x, h.y-30, 'Mer järn behövs!', '#d94f3c'); return; }
+      RES.jarn -= u.kost[niva]; SMIDE[u.ny]++;
+      if(u.ny==='brynjor') for(const p of hjaltar){ p.maxhp += 30; p.hp += 30; }
+      spela('kop'); svavText(cx, topY-14, u.namn+' nivå '+SMIDE[u.ny]+'!', '#ffd97a', true);
+      return;
+    }
+  }
+  h.atkT = h.atkMax;
+  // 3) fiender nära → strid
+  const narMob = mobbar.some(m=>m.stenad<=0 && avst(h.x,h.y,m.x,m.y) < 95);
+  if(narMob){
+    if(h.ch.id==='ylva'){
+      let mal = null, bd = 260;
+      for(const m of mobbar){ if(m.stenad>0) continue; const d = avst(h.x,h.y,m.x,m.y); if(d<bd){ bd = d; mal = m; } }
+      const vinkel = mal? Math.atan2(mal.y-h.y, mal.x-h.x) : Math.atan2(h.fy,h.fx);
+      pilar.push({typ:'pil', x:h.x, y:h.y-12, vx:Math.cos(vinkel)*330, vy:Math.sin(vinkel)*330, dmg:heroDmg(h), liv:1, fran:h});
+      spela('pil');
+    } else {
+      const [ax,ay] = framfor(h, 20);
+      let traf = false;
+      for(const m of mobbar){
+        if(m.stenad>0) continue;
+        if(avst(ax,ay,m.x,m.y) < 34+m.def.r){ skadaMob(m, heroDmg(h), h); traf = true; }
+      }
+      spela(traf? 'traff':'svard');
+    }
+    return;
+  }
+  // 4) naturresurs framför
+  const [px2,py2] = framfor(h, 20);
+  const tx = Math.floor(px2/TS), ty2 = Math.floor(py2/TS);
+  if(inne(tx,ty2)){
+    const i2 = idx(tx,ty2), o = obj[i2];
+    if(o===O_TALL || o===O_STEN || o===O_MALM || (o===O_BAR && objHP[i2]>0)){
+      const dubbel = (h.ch.id==='torbjorn' && o===O_TALL)? 2 : 1;
+      objHP[i2] -= dubbel;
+      let vinst = 0, sort = '';
+      if(o===O_TALL){ vinst = 2*dubbel; sort = 'tra'; spela('yxa');
+        partiklar.push({x:px2,y:py2-8,vx:slump(-40,40),vy:slump(-70,-20),liv:0.5,farg:'#8a6337',st:3}); }
+      if(o===O_STEN){ vinst = 2; sort = 'sten'; spela('sten'); }
+      if(o===O_MALM){ vinst = 1; sort = 'jarn'; spela('malm'); }
+      if(o===O_BAR){ vinst = 4; sort = 'mat'; spela('bar'); }
+      RES[sort] += vinst;
+      svavText(px2, py2-14, '+'+vinst, {tra:'#c9a06a',sten:'#b8b8c2',jarn:'#e8a13c',mat:'#e8c86a'}[sort]);
+      if(objHP[i2]<=0){
+        if(o===O_TALL){ obj[i2] = O_STUBBE; RES.tra += 2; aterVax[i2] = 75; spela('krossa');
+          for(let i3=0;i3<8;i3++) partiklar.push({x:tx*TS+12,y:ty2*TS+8,vx:slump(-50,50),vy:slump(-80,-10),liv:0.6,farg:'#2a7040',st:3}); }
+        if(o===O_STEN || o===O_MALM){ obj[i2] = O_GRUS; }
+        if(o===O_BAR){ objHP[i2] = 0; aterVax[i2] = 45; }
+        flowSmutsig = true; miniSmutsig = true;
+      }
+      return;
+    }
+    // 5) laga byggnad framför
+    const b = bygget(tx,ty2);
+    if(b && b.hp < b.maxhp){
+      const kraft2 = h.ch.id==='rune'? 18 : 8;
+      b.hp = Math.min(b.maxhp, b.hp + kraft2);
+      spela('laga');
+      partiklar.push({x:px2,y:py2-10,vx:slump(-20,20),vy:-40,liv:0.4,farg:'#ffd97a',st:2});
+      return;
+    }
+  }
+  spela('svard');
+}
+
+function anvandKraft(h){
+  if(h.kraftCd>0 || h.byggPa){ if(h.kraftCd>0) spela('nej'); return; }
+  h.kraftCd = h.kraftMax; h.atkT = 0.45;
+  const id = h.ch.id;
+  svavText(h.x, h.y-40, h.ch.kraft+'!', h.ch.farg, true);
+  if(id==='sigrid'){
+    spela('svard'); spela('traff'); skaka(3,0.2);
+    for(const m of mobbar) if(m.stenad<=0 && avst(h.x,h.y,m.x,m.y)<70) skadaMob(m, heroDmg(h)*2.4, h);
+    for(let i=0;i<14;i++){ const v = i/14*Math.PI*2;
+      partiklar.push({x:h.x+Math.cos(v)*30, y:h.y-8+Math.sin(v)*30, vx:Math.cos(v)*80, vy:Math.sin(v)*80, liv:0.4, farg:'#8fd4ff', st:3}); }
+  }
+  if(id==='torbjorn'){
+    spela('krossa'); skaka(4,0.25);
+    const t0x = Math.floor((h.x-58)/TS), t1x = Math.floor((h.x+58)/TS);
+    const t0y = Math.floor((h.y-58)/TS), t1y = Math.floor((h.y+58)/TS);
+    let virke = 0;
+    for(let yy=t0y; yy<=t1y; yy++) for(let xx=t0x; xx<=t1x; xx++){
+      if(!inne(xx,yy) || obj[idx(xx,yy)]!==O_TALL) continue;
+      obj[idx(xx,yy)] = O_STUBBE; aterVax[idx(xx,yy)] = 75; virke += 6;
+      for(let i3=0;i3<6;i3++) partiklar.push({x:xx*TS+12,y:yy*TS+8,vx:slump(-50,50),vy:slump(-80,-10),liv:0.6,farg:'#2a7040',st:3});
+    }
+    if(virke){ RES.tra += virke; svavText(h.x, h.y-56, '+'+virke+' trä!', '#c9a06a', true); flowSmutsig = true; miniSmutsig = true; }
+    for(const m of mobbar) if(m.stenad<=0 && avst(h.x,h.y,m.x,m.y)<60) skadaMob(m, heroDmg(h)*2, h);
+  }
+  if(id==='ylva'){
+    spela('pil');
+    const bas = Math.atan2(h.fy, h.fx);
+    for(let i=0;i<9;i++){
+      const v = bas + (i-4)*0.16;
+      pilar.push({typ:'pil', x:h.x, y:h.y-12, vx:Math.cos(v)*310, vy:Math.sin(v)*310, dmg:heroDmg(h), liv:1.1, fran:h});
+    }
+  }
+  if(id==='rune'){
+    spela('bygg'); skaka(3,0.2);
+    let lagat = 0;
+    for(const b of byggnader){
+      if(!b || b.hp>=b.maxhp) continue;
+      const cx = (b.tx+b.def.w/2)*TS, cy = (b.ty+b.def.h/2)*TS;
+      if(avst(h.x,h.y,cx,cy)<110){ b.hp = Math.min(b.maxhp, b.hp+55); lagat++;
+        partiklar.push({x:cx,y:cy-10,vx:0,vy:-40,liv:0.6,farg:'#ffd97a',st:4}); }
+    }
+    for(const m of mobbar) if(m.stenad<=0 && avst(h.x,h.y,m.x,m.y)<70){ m.stun = 2.2; skadaMob(m, 6, h); }
+    if(lagat) svavText(h.x, h.y-56, lagat+' byggnader lagade!', '#ffd97a');
+  }
+  if(id==='embla'){
+    spela('hjarta');
+    for(const p of hjaltar){
+      if(avst(h.x,h.y,p.x,p.y)>120) continue;
+      if(p.nere>0){ p.nere = 0; p.hp = p.maxhp*0.5; p.blink = 2; spela('uppe'); svavText(p.x,p.y-30,'Uppe igen!','#8fd45a'); }
+      else p.hp = Math.min(p.maxhp, p.hp+32);
+      partiklar.push({x:p.x,y:p.y-20,vx:0,vy:-30,liv:0.7,farg:'#e893b8',st:4});
+    }
+    for(const f of folket) if(!f.gomd && avst(h.x,h.y,f.x,f.y)<120) f.hp = f.maxhp;
+  }
+}
+
+function uppdHjalte(h, dt){
+  const inp = lasInput(h.pad);
+  h.blink = Math.max(0, h.blink-dt);
+  h.atkT = Math.max(0, h.atkT-dt);
+  h.autoT = Math.max(0, h.autoT-dt);
+  h.kraftCd = Math.max(0, h.kraftCd-dt);
+  if(h.nere>0){
+    h.nere -= dt;
+    // kompis intill som håller YXA hjälper upp
+    let hjalp = false;
+    for(const p of hjaltar){
+      if(p===h || p.nere>0) continue;
+      if(avst(h.x,h.y,p.x,p.y)<30 && lasInputTitt(p.pad).aH) hjalp = true;
+    }
+    if(hjalp){ h.revP += dt/1.7;
+      if(h.revP>=1){ h.nere = 0; h.hp = h.maxhp*0.6; h.blink = 2; h.revP = 0; spela('uppe');
+        svavText(h.x,h.y-30,'Uppe igen!','#8fd45a'); } }
+    else h.revP = Math.max(0, h.revP-dt*0.6);
+    if(h.nere<=0 && h.hp<=0){
+      // buren till Långhuset
+      const lh = byggnader.find(b=>b && b.typ==='langhus');
+      if(lh){ h.x = (lh.tx+1.5)*TS; h.y = (lh.ty+lh.def.h)*TS+20; }
+      h.hp = h.maxhp*0.5; h.blink = 2.5; spela('uppe');
+    }
+    return;
+  }
+  // gå
+  let dx = inp.x, dy = inp.y;
+  const langd2 = Math.hypot(dx,dy);
+  if(langd2>1){ dx/=langd2; dy/=langd2; }
+  const fart = HJALTE_STAT[h.ch.id].fart;
+  if(langd2>0.1){
+    flyttaEnhet(h, dx*fart*dt, dy*fart*dt, 8, false);
+    h.gang += dt;
+    if(Math.abs(dx)>Math.abs(dy)){ h.fx = dx>0?1:-1; h.fy = 0; }
+    else { h.fy = dy>0?1:-1; h.fx = 0; }
+  }
+  // knappar
+  if(inp.bT){ h.byggPa = !h.byggPa; spela('valj'); }
+  if(h.byggPa && inp.bT===false && false){} // (bT hanteras ovan: växlar läge)
+  if(h.byggPa){
+    // i byggläge: BYGG bläddrar vidare (andra trycket och framåt), KRAFT avbryter
+    if(inp.bT){ /* redan hanterat som toggle — se nedan */ }
+    if(inp.cT){ h.byggPa = false; spela('valj'); }
+  } else if(inp.cT) anvandKraft(h);
+  if(inp.aT || (inp.aH && h.autoT<=0)){
+    h.autoT = samlaKD();
+    utforHandling(h);
+  }
+  // helning nära Långhuset (kostar mat)
+  const lh = byggnader.find(b=>b && b.typ==='langhus');
+  if(lh && h.hp<h.maxhp && RES.mat>0.5){
+    const cx = (lh.tx+1.5)*TS, cy = (lh.ty+1.5)*TS;
+    if(avst(h.x,h.y,cx,cy)<70){ h.hp = Math.min(h.maxhp, h.hp+5*dt); RES.mat = Math.max(0, RES.mat-0.5*dt); }
+  }
+  // Embla helar passivt intill
+  if(h.ch.id==='embla'){
+    for(const p of hjaltar) if(p!==h && p.nere<=0 && avst(h.x,h.y,p.x,p.y)<64)
+      p.hp = Math.min(p.maxhp, p.hp+2.2*dt);
+  }
+}
+// titta på hålläget utan att äta upp tap-latcharna
+function lasInputTitt(pad){
+  if(pad==='kb') return {aH:!!(TANGENT.KeyJ||TANGENT.KeyZ||TANGENT.Space)};
+  if(pad==='lokal') return {aH:PEKPAD.a};
+  if(pad && pad[0]==='g'){ const gp = gpCache.find(q=>q.id===pad); return {aH:gp? gp.aH:false}; }
+  const s = LANK.pads[pad];
+  return {aH: s && s.vid ? s.st.a : false};
+}
+
+/* ---- byggläge: bläddra med BYGG kräver särskild ordning ---- */
+// (bT togglar in/ut ovan; för att bläddra används i stället: när byggläget är PÅ
+//  tolkas nästa bT som "nästa byggnad" — det sköts här genom att wrappa uppdHjalte)
+const _uppdHjalte0 = uppdHjalte;
+uppdHjalte = function(h, dt){
+  // snappa upp bT innan grundfunktionen äter den, när byggläget redan är på
+  if(h.nere<=0 && h.byggPa){
+    const s = tittaTap(h.pad, 'b');
+    if(s){ h.bySel = (h.bySel+1)%BYGGLISTA.length; spela('valj'); }
+  }
+  _uppdHjalte0(h, dt);
+};
+function tittaTap(pad, knapp){
+  if(pad==='kb'){ const v = TLATCH[knapp==='b'?'b':knapp]; if(v){ TLATCH[knapp] = false; return true; } return false; }
+  if(pad==='lokal'){ const nyckel = knapp+'T'; if(PEKPAD[nyckel]){ PEKPAD[nyckel] = false; return true; } return false; }
+  if(pad && pad[0]==='g'){ const gp = gpCache.find(q=>q.id===pad); if(gp && gp[knapp+'T']){ gp[knapp+'T'] = false; return true; } return false; }
+  const s = LANK.pads[pad];
+  if(s && s.vid && s.st[knapp+'T']){ s.st[knapp+'T'] = false; return true; }
+  return false;
+}
+
+/* ---- byborna ---- */
+function folkTak(){ return 3 + 2*byggnader.filter(b=>b && b.typ==='stuga' && b.hp>0).length; }
+function gorFolk(x,y){
+  return { x, y, hp:26, maxhp:26, jobb:null, hem:null, fas:'ledig', rutt:null, ri:0,
+    mal:null, malI:-1, arbT:0, bar:null, barN:0, gang:0, gomd:false, vantaT:0, gomdI:null };
+}
+function foddFolk(){
+  const lh = byggnader.find(b=>b && b.typ==='langhus');
+  if(!lh) return;
+  const f = gorFolk((lh.tx+1.5)*TS+slump(-10,10), (lh.ty+lh.def.h)*TS+14);
+  folket.push(f); statistik.folkFott++;
+  spela('folk'); svavText(f.x, f.y-26, 'En ny bybo!', '#efe6d0');
+}
+function fordelaJobb(){
+  for(const b of byggnader){
+    if(!b || !b.def.jobb || b.hp<=0 || (b.arb && b.arb.hp>0)) continue;
+    let bast = null, bd = 1e9;
+    for(const f of folket){
+      if(f.jobb || f.gomd) continue;
+      const d = avst(f.x,f.y,(b.tx+1)*TS,(b.ty+1)*TS);
+      if(d<bd){ bd = d; bast = f; }
+    }
+    if(bast){ bast.jobb = b.def.jobb; bast.hem = b; b.arb = bast; bast.fas = 'gaJobb'; bast.rutt = null; }
+  }
+}
+const JOBB_OBJ = { ved:O_TALL, sten:O_STEN, malm:O_MALM };
+function foljRutt(f, dt, fart){
+  if(!f.rutt || f.ri>=f.rutt.length){
+    if(!f.mal) return false;
+    f.rutt = sokVag(Math.floor(f.x/TS), Math.floor(f.y/TS), f.mal[0], f.mal[1]);
+    f.ri = 0;
+    if(!f.rutt){ f.vantaT = 2.5; f.mal = null; return false; }
+  }
+  const wp = f.rutt[f.ri];
+  if(!wp) return true;
+  const mx = wp[0]*TS+TS/2, my = wp[1]*TS+TS/2;
+  const d = avst(f.x,f.y,mx,my);
+  if(d<5){ f.ri++; if(f.ri>=f.rutt.length) return true; return false; }
+  f.x += (mx-f.x)/d*fart*dt; f.y += (my-f.y)/d*fart*dt;
+  f.gang += dt;
+  return false;
+}
+function uppdFolk(f, dt){
+  f.vantaT = Math.max(0, f.vantaT-dt);
+  // natten: spring och göm dig!
+  if(SPEL.fas!=='dag'){
+    if(f.gomd) return;
+    if(f.fas!=='fly'){
+      f.fas = 'fly'; f.rutt = null;
+      let bast = null, bd = 1e9;
+      for(const b of byggnader){
+        if(!b || b.hp<=0 || !(b.typ==='stuga'||b.typ==='langhus')) continue;
+        const d = avst(f.x,f.y,(b.tx+1)*TS,(b.ty+1)*TS);
+        if(d<bd){ bd = d; bast = b; }
+      }
+      if(bast){ const gr = granTillBygg(bast); f.mal = gr; f.gomdI = bast; }
+    }
+    if(f.mal){ if(foljRutt(f, dt, 92)){ f.gomd = true; f.rutt = null; svavText(f.x,f.y-20,'*göms*','#a89e88'); } }
+    return;
+  }
+  if(f.gomd){
+    f.gomd = false; f.fas = f.jobb? 'gaJobb':'ledig'; f.rutt = null; f.mal = null;
+    if(f.gomdI){ const gr = granTillBygg(f.gomdI); if(gr){ f.x = gr[0]*TS+TS/2; f.y = gr[1]*TS+TS/2; } }
+  }
+  if(f.vantaT>0) return;
+  if(!f.jobb){
+    // ledig: strosa runt Långhuset
+    if(!f.mal || foljRutt(f, dt, 40)){
+      const lh = byggnader.find(b=>b && b.typ==='langhus');
+      if(lh){ const tx = kl(lh.tx+((Math.random()*8)|0)-3, 3, MAPW-4), ty2 = kl(lh.ty+lh.def.h+((Math.random()*4)|0), 3, MAPH-4);
+        if(folkPasserbar(tx,ty2,-1)){ f.mal = [tx,ty2]; f.rutt = null; } }
+      f.vantaT = slump(1,3);
+    }
+    return;
+  }
+  if(f.fas==='gaJobb'){
+    if(f.jobb==='mat'){
+      if(!f.mal){ const gr = granTillBygg(f.hem); if(!gr){ f.vantaT = 3; return; } f.mal = gr; f.rutt = null; }
+      if(foljRutt(f, dt, 62)){ f.fas = 'jobba'; f.arbT = 0; f.mal = null; f.rutt = null; }
+      return;
+    }
+    if(!f.mal){
+      const cel = narmasteObj(Math.floor(f.hem.tx+1), Math.floor(f.hem.ty+1), JOBB_OBJ[f.jobb], 30);
+      if(!cel){ f.vantaT = 4; svavText(f.x,f.y-20,'Hittar ingen '+({ved:'skog',sten:'sten',malm:'malm'})[f.jobb]+'!','#d94f3c'); return; }
+      f.malI = idx(cel[0],cel[1]);
+      const gr = granTill(cel[0],cel[1]);
+      if(!gr){ f.vantaT = 3; return; }
+      f.mal = gr; f.rutt = null;
+    }
+    if(foljRutt(f, dt, 62)){ f.fas = 'jobba'; f.arbT = 0; f.mal = null; f.rutt = null; }
+    return;
+  }
+  if(f.fas==='jobba'){
+    f.arbT += dt;
+    if(f.jobb==='mat'){
+      if(f.arbT>7){ f.bar = 'mat'; f.barN = 7; f.fas = 'gaHem'; f.mal = null; f.rutt = null; f.arbT = 0; }
+      return;
+    }
+    // står vi fortfarande intill rätt ruta?
+    const o = JOBB_OBJ[f.jobb];
+    if(obj[f.malI]!==o){ f.fas = 'gaJobb'; f.mal = null; f.malI = -1; f.arbT = 0; return; }
+    if(f.arbT>1.5){
+      f.arbT = 0;
+      objHP[f.malI] -= 1;
+      const vinst = f.jobb==='malm'? 1 : 2;
+      f.bar = {ved:'tra',sten:'sten',malm:'jarn'}[f.jobb];
+      f.barN += vinst;
+      if(objHP[f.malI]<=0){
+        if(o===O_TALL){ obj[f.malI] = O_STUBBE; aterVax[f.malI] = 75; }
+        else { obj[f.malI] = O_GRUS; }
+        flowSmutsig = true; miniSmutsig = true;
+        f.malI = -1; f.mal = null;
+        if(f.barN<6) f.fas = 'gaJobb';
+      }
+      if(f.barN>=6){ f.fas = 'gaHem'; f.mal = null; f.rutt = null; }
+    }
+    return;
+  }
+  if(f.fas==='gaHem'){
+    if(!f.mal){
+      const lager = narmastLager(f.x,f.y);
+      if(!lager){ f.vantaT = 3; return; }
+      const gr = granTillBygg(lager);
+      if(!gr){ f.vantaT = 3; return; }
+      f.mal = gr; f.rutt = null;
+    }
+    if(foljRutt(f, dt, 62)){
+      RES[f.bar] += f.barN;
+      svavText(f.x, f.y-22, '+'+f.barN, {tra:'#c9a06a',sten:'#b8b8c2',jarn:'#e8a13c',mat:'#e8c86a'}[f.bar]);
+      f.barN = 0; f.bar = null; f.fas = 'gaJobb'; f.mal = null; f.rutt = null;
+    }
+    return;
+  }
+  f.fas = f.jobb? 'gaJobb' : 'ledig';
+}
+</script>
+<script>
+'use strict';
+/* ===================== TROLLEN & NATTEN ===================== */
+const MOBTYP = {
+  vatte:  {hp:16,  fart:42, dmg:6,  bdmg:7,  atkCd:1.1, r:9,  farg:'#7fae52', morkFarg:'#5c8a3a', ogon:'#ffd97a'},
+  snabb:  {hp:11,  fart:78, dmg:5,  bdmg:5,  atkCd:0.9, r:8,  farg:'#c8c84a', morkFarg:'#9a9a33', ogon:'#ffffff', jagarFolk:true},
+  troll:  {hp:75,  fart:27, dmg:14, bdmg:24, atkCd:1.5, r:15, farg:'#7a8a6a', morkFarg:'#5a6a4c', ogon:'#ffb03c'},
+  kastare:{hp:26,  fart:33, dmg:8,  bdmg:12, atkCd:2.4, r:11, farg:'#8a7a9a', morkFarg:'#665a74', ogon:'#d0b8ff', kastar:true},
+  eld:    {hp:12,  fart:60, dmg:10, bdmg:48, atkCd:1,   r:8,  farg:'#e86a3c', morkFarg:'#b0482a', ogon:'#ffd97a', bomb:true},
+  gast:   {hp:10,  fart:52, dmg:6,  bdmg:6,  atkCd:1.2, r:9,  farg:'#cfe0e8', morkFarg:'#9ab4c0', ogon:'#8fd4ff', flyg:true, jagarFolk:true},
+  kung:   {hp:1500,fart:22, dmg:26, bdmg:65, atkCd:1.4, r:32, farg:'#8a9a8a', morkFarg:'#66766a', ogon:'#ffb03c', boss:true},
+};
+function gorMob(slag, x, y, elit){
+  const bas = MOBTYP[slag];
+  const hpMult = (1 + 0.3*Math.max(0,hjaltar.length-1)) * (elit?1.6:1);
+  const def = elit? Object.assign({}, bas, {fart:bas.fart*1.15, dmg:bas.dmg+3}) : bas;
+  const m = { slag, def, x, y, vx:0, vy:0, hp:Math.round(bas.hp*hpMult), maxhp:Math.round(bas.hp*hpMult),
+    gang:0, atkT:slump(0.3,1), kastT:slump(1,2.5), stun:0, stenad:0, elit:!!elit,
+    sumT:9, fas2:false };
+  mobbar.push(m);
+  return m;
+}
+function dodaMob(m, stridsDod){
+  const i = mobbar.indexOf(m);
+  if(i<0) return;
+  mobbar.splice(i,1);
+  if(stridsDod){
+    statistik.dodade++;
+    spela('dod');
+    for(let k=0;k<8;k++) partiklar.push({x:m.x,y:m.y-6,vx:slump(-70,70),vy:slump(-90,-10),liv:0.5,farg:m.def.farg,st:3});
+    if(m.slag==='troll'){ RES.sten += 3; svavText(m.x,m.y-20,'+3 sten','#b8b8c2'); }
+    if(m.slag==='kastare'){ RES.sten += 2; svavText(m.x,m.y-20,'+2 sten','#b8b8c2'); }
+    if(m.slag==='kung') segra();
+  } else {
+    spela('smulas');
+    for(let k=0;k<7;k++) partiklar.push({x:m.x,y:m.y-6,vx:slump(-50,50),vy:slump(-70,-10),liv:0.6,farg:'#8a8a90',st:3});
+  }
+}
+function skadaFolk(f, dmg){
+  f.hp -= dmg;
+  if(f.hp<=0){
+    const i = folket.indexOf(f);
+    if(i>=0) folket.splice(i,1);
+    if(f.hem) f.hem.arb = null;
+    spela('dod');
+    svavText(f.x, f.y-20, 'En bybo föll!', '#d94f3c', true);
+    for(let k=0;k<6;k++) partiklar.push({x:f.x,y:f.y-6,vx:slump(-50,50),vy:slump(-80,-10),liv:0.5,farg:'#7a6544',st:3});
+  }
+}
+function kastaSten(fran, mx, my, dmgB, dmgH){
+  pilar.push({typ:'rock', sx:fran.x, sy:fran.y-10, tx:mx, ty:my, x:fran.x, y:fran.y-10,
+    t:0, dur:Math.max(0.5, avst(fran.x,fran.y,mx,my)/180), dmgB, dmgH});
+  spela('pil');
+}
+
+function uppdMob(m, dt){
+  m.atkT = Math.max(0, m.atkT-dt);
+  // gryningen: förstenas och smulas sönder
+  if(SPEL.fas==='gryning' && !m.def.boss){
+    if(m.stenad===0) spela('stenad');
+    m.stenad += dt*0.9;
+    if(m.stenad>2.4) dodaMob(m, false);
+    return;
+  }
+  if(m.stun>0){ m.stun -= dt; return; }
+  m.gang += dt;
+  const fart = m.def.fart;
+  // mål: bybor för jägare, annars hjältar nära, annars vägen mot Långhuset
+  let malE = null, malAr = '';
+  if(m.def.jagarFolk){
+    let bd = 320;
+    for(const f of folket){ if(f.gomd) continue; const d = avst(m.x,m.y,f.x,f.y); if(d<bd){ bd = d; malE = f; malAr = 'folk'; } }
+  }
+  if(!malE){
+    let bd = m.def.flyg? 1e9 : (m.def.boss? 60 : 85);
+    for(const h of hjaltar){ if(h.nere>0) continue; const d = avst(m.x,m.y,h.x,h.y); if(d<bd){ bd = d; malE = h; malAr = 'hjalte'; } }
+  }
+  if(m.def.flyg && !malE){
+    const lh = byggnader.find(b=>b && b.typ==='langhus');
+    if(lh){ malE = {x:(lh.tx+1.5)*TS, y:(lh.ty+1.5)*TS, lh:true}; malAr = 'hus'; }
+  }
+  // kastare: stanna och kasta sten på byggnader/hjältar inom räckhåll
+  if(m.def.kastar || (m.def.boss && m.fas2)){
+    m.kastT -= dt;
+    if(m.kastT<=0){
+      let malK = null, bd = m.def.boss? 260 : 185;
+      for(const b of byggnader){
+        if(!b || b.typ==='fackla' || b.hp<=0) continue;
+        const cx = (b.tx+b.def.w/2)*TS, cy = (b.ty+b.def.h/2)*TS;
+        const d = avst(m.x,m.y,cx,cy);
+        if(d>50 && d<bd){ bd = d; malK = [cx,cy]; }
+      }
+      if(!malK){ for(const h of hjaltar){ if(h.nere>0) continue; const d = avst(m.x,m.y,h.x,h.y); if(d>50 && d<bd){ bd = d; malK = [h.x,h.y]; } } }
+      if(malK){ kastaSten(m, malK[0], malK[1], m.def.boss? 40:12, m.def.boss? 18:9); m.kastT = m.def.boss? 3.5 : 2.6; }
+      else m.kastT = 1;
+    }
+  }
+  // Bergakungen: stampar och kallar på vättar
+  if(m.def.boss){
+    if(!m.fas2 && m.hp < m.maxhp*0.5){
+      m.fas2 = true; spela('vral'); skaka(7,0.5);
+      svavText(m.x, m.y-70, 'BERGAKUNGEN RASAR!', '#ffb03c', true);
+    }
+    m.sumT -= dt;
+    if(m.sumT<=0){
+      m.sumT = m.fas2? 7 : 9;
+      spela('vral');
+      for(let k=0;k<(m.fas2?3:2);k++) gorMob(m.fas2 && k===0? 'snabb':'vatte', m.x+slump(-30,30), m.y+slump(-20,20));
+      svavText(m.x, m.y-60, 'Ur berget!', '#a89e88');
+    }
+    let naraH = null;
+    for(const h of hjaltar) if(h.nere<=0 && avst(m.x,m.y,h.x,h.y)<55) naraH = h;
+    if(naraH && m.atkT<=0){
+      m.atkT = 3;
+      skaka(6,0.4); spela('krossa');
+      for(const h of hjaltar) if(h.nere<=0 && avst(m.x,m.y,h.x,h.y)<70) skadaHjalte(h, 20);
+      for(let k=0;k<10;k++) partiklar.push({x:m.x+slump(-30,30),y:m.y+slump(-6,10),vx:slump(-60,60),vy:slump(-40,-10),liv:0.5,farg:'#8a8a90',st:4});
+    }
+  }
+  const bossFart = m.def.boss && m.fas2 ? fart*1.35 : fart;
+  if(malE && malAr!=='hus'){
+    // jaga levande mål
+    const d = avst(m.x,m.y,malE.x,malE.y);
+    const rack = m.def.r + 10;
+    if(d > rack){
+      const vx = (malE.x-m.x)/d*bossFart, vy = (malE.y-m.y)/d*bossFart;
+      m.vx = vx;
+      if(m.def.flyg){ m.x += vx*dt; m.y += vy*dt; }
+      else flyttaEnhet(m, vx*dt, vy*dt, m.def.r*0.8, true);
+    } else if(m.atkT<=0){
+      m.atkT = m.def.atkCd;
+      if(m.def.bomb){ spranga(m); return; }
+      if(malAr==='folk') skadaFolk(malE, m.def.dmg*2);
+      else skadaHjalte(malE, m.def.dmg);
+    }
+    return;
+  }
+  // följ flödet mot Långhuset
+  const tx = Math.floor(m.x/TS), ty2 = Math.floor(m.y/TS);
+  const steg = inne(tx,ty2)? flodeSteg(tx,ty2) : null;
+  let rx = 0, ry = 0, malB = null;
+  if(steg){
+    const b = bygget(steg[0], steg[1]);
+    if(b && b.def.fast!==false) malB = b;
+    rx = steg[0]*TS+TS/2 - m.x; ry = steg[1]*TS+TS/2 - m.y;
+  } else {
+    // instängd eller vilse: gå rakt mot Långhuset och krossa det som är i vägen
+    const lh = byggnader.find(bb=>bb && bb.typ==='langhus');
+    if(lh){ rx = (lh.tx+1.5)*TS - m.x; ry = (lh.ty+1.5)*TS - m.y; }
+    const ftx = Math.floor((m.x+Math.sign(rx)*TS)/TS), fty = Math.floor((m.y+Math.sign(ry)*TS)/TS);
+    const fb = bygget(ftx,fty);
+    if(fb && fb.def.fast!==false) malB = fb;
+    else if(inne(ftx,fty) && obj[idx(ftx,fty)]===O_TALL && !m.def.flyg){
+      // trollen bryter sig igenom skogen
+      if(m.atkT<=0){ m.atkT = m.def.atkCd;
+        objHP[idx(ftx,fty)] -= 2;
+        if(objHP[idx(ftx,fty)]<=0){ obj[idx(ftx,fty)] = O_STUBBE; aterVax[idx(ftx,fty)] = 75; flowSmutsig = true; } }
+      return;
+    }
+  }
+  const dl = Math.hypot(rx,ry)||1;
+  if(malB){
+    const cx = (malB.tx+malB.def.w/2)*TS, cy = (malB.ty+malB.def.h/2)*TS;
+    const nara = avst(m.x,m.y,cx,cy) < (Math.max(malB.def.w,malB.def.h)/2)*TS + m.def.r + 8;
+    if(nara){
+      if(m.def.bomb){ spranga(m); return; }
+      if(m.atkT<=0){
+        m.atkT = m.def.atkCd;
+        skadaBygg(malB, m.def.bdmg);
+        malB.tid = 0;
+        if(m.slag==='troll'||m.slag==='kung'||Math.random()<0.25) spela('krossa');
+        partiklar.push({x:cx+slump(-10,10),y:cy+slump(-8,8),vx:slump(-40,40),vy:slump(-60,-10),liv:0.4,farg:'#7a5c38',st:3});
+      }
+      return;
+    }
+  }
+  m.vx = rx/dl*bossFart;
+  if(m.def.flyg){ m.x += rx/dl*bossFart*dt; m.y += ry/dl*bossFart*dt; }
+  else flyttaEnhet(m, rx/dl*bossFart*dt, ry/dl*bossFart*dt, m.def.r*0.8, true);
+  // lite separation så de inte står i varandra
+  for(const q of mobbar){
+    if(q===m) continue;
+    const d = avst(m.x,m.y,q.x,q.y);
+    if(d>0.1 && d < m.def.r+q.def.r){ m.x += (m.x-q.x)/d*14*dt; m.y += (m.y-q.y)/d*14*dt; }
+  }
+}
+function spranga(m){
+  spela('boom'); skaka(5,0.3);
+  for(let k=0;k<16;k++) partiklar.push({x:m.x,y:m.y-6,vx:slump(-110,110),vy:slump(-130,-10),liv:0.6,farg:k%2?'#ff8c28':'#ffd97a',st:4});
+  for(const b of byggnader){
+    if(!b) continue;
+    const cx = (b.tx+b.def.w/2)*TS, cy = (b.ty+b.def.h/2)*TS;
+    if(avst(m.x,m.y,cx,cy)<52) skadaBygg(b, m.def.bdmg);
+  }
+  for(const h of hjaltar) if(h.nere<=0 && avst(m.x,m.y,h.x,h.y)<48) skadaHjalte(h, 14);
+  for(const f of folket) if(!f.gomd && avst(m.x,m.y,f.x,f.y)<48) skadaFolk(f, 20);
+  dodaMob(m, false);
+  statistik.dodade++;
+}
+
+/* ---- projektiler ---- */
+function uppdPilar(dt){
+  for(const p of [...pilar]){
+    if(p.typ==='rock'){
+      p.t += dt/p.dur;
+      if(p.t>=1){
+        pilar.splice(pilar.indexOf(p),1);
+        spela('sten');
+        for(let k=0;k<6;k++) partiklar.push({x:p.tx,y:p.ty,vx:slump(-50,50),vy:slump(-60,-10),liv:0.4,farg:'#8b8b93',st:3});
+        const b = bygget(Math.floor(p.tx/TS), Math.floor(p.ty/TS));
+        if(b) skadaBygg(b, p.dmgB);
+        for(const h of hjaltar) if(h.nere<=0 && avst(p.tx,p.ty,h.x,h.y)<20) skadaHjalte(h, p.dmgH);
+        for(const f of folket) if(!f.gomd && avst(p.tx,p.ty,f.x,f.y)<18) skadaFolk(f, p.dmgH);
+        continue;
+      }
+      p.x = mix(p.sx, p.tx, p.t);
+      p.y = mix(p.sy, p.ty, p.t) - Math.sin(p.t*Math.PI)*46;
+      continue;
+    }
+    p.x += p.vx*dt; p.y += p.vy*dt; p.liv -= dt;
+    let traff = false;
+    for(const m of mobbar){
+      if(m.stenad>0) continue;
+      if(avst(p.x,p.y,m.x,m.y-m.def.r) < m.def.r+5 || avst(p.x,p.y,m.x,m.y) < m.def.r+5){
+        skadaMob(m, p.dmg, p.fran||null); traff = true; break;
+      }
+    }
+    if(traff || p.liv<=0 || p.x<0||p.y<0||p.x>PXW||p.y>PXH) pilar.splice(pilar.indexOf(p),1);
+  }
+}
+
+/* ---- byggnader: torn skjuter, portar öppnas, åkrar växer ---- */
+function uppdByggnader(dt){
+  for(const b of byggnader){
+    if(!b) continue;
+    b.tid += dt; b.ny = Math.max(0, b.ny-dt);
+    if(b.typ==='torn'){
+      b.skytT -= dt;
+      if(b.skytT<=0){
+        const cx = (b.tx+0.5)*TS, cy = b.ty*TS-14;
+        let mal = null, bd = 175;
+        for(const m of mobbar){ if(m.stenad>0) continue; const d = avst(cx,cy,m.x,m.y); if(d<bd){ bd = d; mal = m; } }
+        if(mal){
+          b.skytT = 1.1;
+          const v = Math.atan2(mal.y-14-cy, mal.x-cx);
+          pilar.push({typ:'pil', x:cx, y:cy, vx:Math.cos(v)*300, vy:Math.sin(v)*300, dmg:8*(1+0.5*SMIDE.pilar), liv:0.8});
+          spela('pil');
+        } else b.skytT = 0.25;
+      }
+    }
+    if(b.typ==='port'){
+      let nara = false;
+      const cx = (b.tx+0.5)*TS, cy = (b.ty+0.5)*TS;
+      for(const h of hjaltar) if(avst(h.x,h.y,cx,cy)<34) nara = true;
+      for(const f of folket) if(!f.gomd && avst(f.x,f.y,cx,cy)<30) nara = true;
+      b.oppen = kl(b.oppen + (nara? dt*5 : -dt*5), 0, 1);
+    }
+  }
+}
+
+/* ---- dygnet ---- */
+function kantPos(kant){
+  if(kant==='N') return [slump(5,MAPW-5)*TS, 3.2*TS];
+  if(kant==='S') return [slump(5,MAPW-5)*TS, (MAPH-3.2)*TS];
+  if(kant==='V') return [3.2*TS, slump(5,MAPH-5)*TS];
+  return [(MAPW-3.2)*TS, slump(5,MAPH-5)*TS];
+}
+function planeraNatt(n){
+  const spelare = Math.max(1, hjaltar.length);
+  const skala = n>10 ? Math.pow(1.18, n-10) : 1;
+  const antal = Math.round((5 + n*2.4) * (0.7 + 0.3*spelare) * skala);
+  const sorter = [];
+  for(let i=0;i<antal;i++){
+    let s = 'vatte';
+    const r = Math.random();
+    if(n>=2 && r<0.22) s = 'snabb';
+    if(n>=4 && r>=0.22 && r<0.34) s = 'kastare';
+    if(n>=6 && r>=0.34 && r<0.44) s = 'eld';
+    if(n>=7 && r>=0.44 && r<0.54) s = 'gast';
+    sorter.push(s);
+  }
+  const nTroll = n>=3 ? Math.floor(n/3) + (n>=6?1:0) : 0;
+  for(let i=0;i<Math.round(nTroll*skala);i++) sorter.push('troll');
+  // kanter
+  const alla = ['N','S','V','O'];
+  const nKant = n<4?1 : n<8?2 : 3;
+  const kanter = [];
+  while(kanter.length<nKant){
+    const k = valfri(alla);
+    if(!kanter.includes(k)) kanter.push(k);
+  }
+  // kö i tre anstormningar
+  const ko = [];
+  sorter.forEach((s,i)=>{
+    const våg = i%3;
+    ko.push({ t: 2 + våg*26 + slump(0,7), slag:s, kant: kanter[i%kanter.length],
+      elit: n>=7 && Math.random() < 0.1+0.025*n });
+  });
+  if(n===10) ko.push({ t: 12, slag:'kung', kant: kanter[0], elit:false });
+  ko.sort((a,b)=>a.t-b.t);
+  return { tid:0, ko, kanter };
+}
+function startNatt(){
+  SPEL.fas = 'natt'; SPEL.klocka = 0;
+  if(!SPEL.nattKlar) SPEL.natt = planeraNatt(SPEL.dag);
+  SPEL.nattKlar = false;
+  sattLat(SPEL.dag===10? 'boss' : 'natt');
+  spela('lur');
+  if(SPEL.dag===10){ spela('vral'); svavText(kamX+VIEW_W/2, kamY+120, 'BERGAKUNGEN KOMMER!', '#ffb03c', true); }
+  svavText(kamX+VIEW_W/2, kamY+90, '— NATT '+SPEL.dag+' —', '#8fd4ff', true);
+}
+function startGryning(){
+  SPEL.fas = 'gryning'; SPEL.klocka = 0;
+  spela('tupp');
+  svavText(kamX+VIEW_W/2, kamY+90, 'GRYNING — trollen förstenas!', '#ffd97a', true);
+}
+function startDag(n){
+  SPEL.dag = n; SPEL.fas = 'dag';
+  SPEL.dagLangd = n===1? 150 : DAG_LANGD;
+  SPEL.tidKvar = SPEL.dagLangd;
+  SPEL.varnat = false;
+  sattLat('dag');
+  if(n>1) svavText(kamX+VIEW_W/2, kamY+90, '— DAG '+n+' —', '#ffd97a', true);
+}
+function uppdDygn(dt){
+  if(SPEL.fas==='dag'){
+    SPEL.tidKvar -= dt;
+    if(SPEL.tidKvar<10 && !SPEL.varnat){
+      SPEL.varnat = true;
+      SPEL.natt = planeraNatt(SPEL.dag);   // så minimapen kan varna för anfallskanterna
+      SPEL.nattKlar = true;
+      spela('varning');
+    }
+    if(SPEL.tidKvar<=0) startNatt();
+  } else if(SPEL.fas==='natt'){
+    SPEL.natt.tid += dt;
+    const ko = SPEL.natt.ko;
+    while(ko.length && ko[0].t <= SPEL.natt.tid){
+      const post = ko.shift();
+      const [sx,sy] = kantPos(post.kant);
+      gorMob(post.slag, sx, sy, post.elit);
+    }
+    if(!ko.length && mobbar.length===0) startGryning();
+  } else if(SPEL.fas==='gryning'){
+    SPEL.klocka += dt;
+    if(SPEL.klocka>5 && mobbar.length===0) startDag(SPEL.dag+1);
+  }
+}
+
+/* ---- start, nederlag, seger ---- */
+function startSpel(){
+  nyVarld((Math.random()*1e9)|0);
+  RES = { tra:40, sten:10, mat:15, jarn:0 };
+  folket = []; mobbar = []; pilar = []; partiklar = []; texter = [];
+  statistik = { dodade:0, byggt:0, folkFott:0 };
+  SPEL.lage = 'spel'; SPEL.paus = false; SPEL.seger = false; SPEL.segerT = 0;
+  SPEL.folkT = 6; SPEL.jobbT = 0; SPEL.flowT = 0; SPEL.natt = {};
+  hjaltar.forEach((h,i)=>{
+    const nyH = gorHjalte(h.ci, h.pad, i);
+    hjaltar[i] = nyH;
+  });
+  for(let i=0;i<3;i++) foddFolk();
+  statistik.folkFott = 0;
+  startDag(1);
+  uppdKamera(0, true);
+  spela('tupp');
+}
+function byNederlag(){
+  SPEL.lage = 'slut'; SPEL.slutT = 2.5;
+  sattLat('slut');
+  spela('vral'); skaka(9,0.8);
+}
+function segra(){
+  SPEL.seger = true; SPEL.segerT = 0;
+  sattLat('seger');
+  spela('fanfar'); skaka(4,0.4);
+  for(let k=0;k<50;k++) partiklar.push({x:kamX+slump(0,VIEW_W), y:kamY+slump(0,VIEW_H*0.5),
+    vx:slump(-30,30), vy:slump(20,80), liv:slump(1,2.4), farg:valfri(['#ffd97a','#8fd4ff','#e893b8','#8fd45a']), st:4});
+}
+
+/* ---- huvuduppdateringen i spelet ---- */
+function uppdSpel(dt){
+  if(SPEL.lage==='slut'){
+    SPEL.slutT -= dt;
+    for(const p of [...partiklar]){ p.x += p.vx*dt; p.y += p.vy*dt; p.liv -= dt; if(p.liv<=0) partiklar.splice(partiklar.indexOf(p),1); }
+    if(SPEL.slutT<=0){
+      for(const h of hjaltar) if(lasInput(h.pad).aT){ startSpel(); return; }
+    }
+    return;
+  }
+  if(SPEL.paus) return;
+  tid += dt;
+  skakT = Math.max(0, skakT-dt); if(skakT<=0) skakA = 0;
+  if(SPEL.seger) SPEL.segerT += dt;
+  for(const h of hjaltar) uppdHjalte(h, dt);
+  SPEL.jobbT -= dt;
+  if(SPEL.jobbT<=0){ SPEL.jobbT = 1; fordelaJobb(); }
+  for(const f of [...folket]) uppdFolk(f, dt);
+  for(const m of [...mobbar]) uppdMob(m, dt);
+  uppdPilar(dt);
+  uppdByggnader(dt);
+  // partiklar & texter
+  for(const p of [...partiklar]){
+    p.x += p.vx*dt; p.y += p.vy*dt;
+    if(!p.rok) p.vy += 140*dt;
+    p.liv -= dt;
+    if(p.liv<=0) partiklar.splice(partiklar.indexOf(p),1);
+  }
+  for(const t of [...texter]){ t.t += dt; if(t.t>1.6) texter.splice(texter.indexOf(t),1); }
+  // återväxt
+  for(const nyckel in aterVax){
+    aterVax[nyckel] -= dt;
+    if(aterVax[nyckel]<=0){
+      const i2 = +nyckel;
+      if(obj[i2]===O_STUBBE && byggKarta[i2]<0){ obj[i2] = O_TALL; objHP[i2] = 3; flowSmutsig = true; miniSmutsig = true; }
+      else if(obj[i2]===O_BAR) objHP[i2] = 1;
+      delete aterVax[nyckel];
+    }
+  }
+  // nya bybor om det finns mat & plats
+  SPEL.folkT -= dt;
+  if(SPEL.folkT<=0){
+    SPEL.folkT = 12;
+    if(folket.length < folkTak() && RES.mat>=8 && SPEL.fas==='dag'){ RES.mat -= 8; foddFolk(); }
+  }
+  uppdDygn(dt);
+  // flödesfältet räknas om ibland
+  SPEL.flowT -= dt;
+  if(flowSmutsig && SPEL.flowT<=0){ raknaFlode(); flowSmutsig = false; SPEL.flowT = 0.4; }
+  uppdKamera(dt);
+}
+</script>
+<script>
+'use strict';
+/* ===================== NÄT, LOBBY & UPPSTART =====================
+   En enhet är värd (stora skärmen). Mobiler ansluter via PeerJS och
+   blir handkontroller. Snabba tryck latchas hos värden så de aldrig
+   faller mellan två bildrutor. */
+const URLQ = new URLSearchParams(location.search);
+const HARPEER = typeof window.Peer !== 'undefined';
+const ARPEK = 'ontouchstart' in window;
+let SIDLAGE = 'vard';
+if(URLQ.get('join')) SIDLAGE = 'mobil';
+else if(HARPEER && ARPEK && Math.min(window.innerWidth, window.innerHeight) < 620) SIDLAGE = 'val';
+
+const LANK = { roll:'ingen', peer:null, pads:{}, kod:'', oppen:false, nastaIdx:0, senastSkick:0 };
+const PUBLIK_URL = 'https://8bitcat.github.io/trollnatt/';
+// STUN + TURN-relä (behövs bakom VPN/client isolation — infrastruktur, inte spelkod)
+const ISKONF = { config:{ iceServers:[
+  { urls:['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302'] },
+  { urls:'turn:openrelay.metered.ca:80', username:'openrelayproject', credential:'openrelayproject' },
+  { urls:'turn:openrelay.metered.ca:443', username:'openrelayproject', credential:'openrelayproject' },
+  { urls:'turn:openrelay.metered.ca:443?transport=tcp', username:'openrelayproject', credential:'openrelayproject' }
+]}};
+function gorKod(){
+  const A = 'abcdefghjkmnpqrstuvwxyz23456789';
+  let s = '';
+  for(let i=0;i<4;i++) s += A[(Math.random()*A.length)|0];
+  return s;
+}
+function padIdn(){ return Object.keys(LANK.pads).filter(id=>LANK.pads[id].vid); }
+
+function startVard(){
+  if(!HARPEER || LANK.roll==='vard') return;
+  LANK.roll = 'vard';
+  let forsok = 0;
+  const forsoka = ()=>{
+    LANK.kod = gorKod();
+    const peer = new Peer('trollnatt-'+LANK.kod, ISKONF);
+    LANK.peer = peer;
+    peer.on('open', ()=>{ LANK.oppen = true; uppdateraQR(); });
+    peer.on('disconnected', ()=>{ try{ peer.reconnect(); }catch(e){} });
+    peer.on('error', fel=>{
+      if(fel && fel.type==='unavailable-id' && forsok++ < 5){ try{ peer.destroy(); }catch(e){} forsoka(); }
+    });
+    peer.on('connection', kanal=>{
+      kanal.on('open', ()=>{
+        // återanvänd ett dött id om mobilen laddade om
+        const upptagna = [...vantar.map(j=>j.pad), ...hjaltar.map(h=>h.pad)];
+        let id = upptagna.find(p=>p && p[0]==='n' && (!LANK.pads[p] || !LANK.pads[p].vid));
+        if(!id) id = 'n'+(LANK.nastaIdx++);
+        LANK.pads[id] = { kanal, vid:true, st:{x:0,y:0,a:false,b:false,c:false} };
+        kanal.on('data', d=>{
+          if(!d || d.k!=='in' || !LANK.pads[id]) return;
+          const st = LANK.pads[id].st;
+          const nx = +d.x||0, ny = +d.y||0, na = !!d.a, nb = !!d.b, nc = !!d.c;
+          if(na && !st.a) st.aT = true;      // latcha varje nedtryck
+          if(nb && !st.b) st.bT = true;
+          if(nc && !st.c) st.cT = true;
+          if(nx!==0 && st.x===0) st.xT = nx>0?1:-1;
+          st.x = nx; st.y = ny; st.a = na; st.b = nb; st.c = nc;
+        });
+        const tappa = ()=>{ if(LANK.pads[id] && LANK.pads[id].kanal===kanal){
+          LANK.pads[id].vid = false; LANK.pads[id].st = {x:0,y:0,a:false,b:false,c:false}; } };
+        kanal.on('close', tappa); kanal.on('error', tappa);
+      });
+    });
+  };
+  forsoka();
+}
+function skickaTill(id, m){
+  const p = LANK.pads[id];
+  if(p && p.vid){ try{ p.kanal.send(m); }catch(e){} }
+}
+function skickaStatus(){
+  if(LANK.roll!=='vard') return;
+  const nu = performance.now()/1000;
+  if(nu - LANK.senastSkick < 0.3) return;
+  LANK.senastSkick = nu;
+  for(const id of padIdn()){
+    let m = { k:'st', lage:'lobby' };
+    const jr = vantar.find(j=>j.pad===id);
+    if(jr){
+      const ch = HJALTAR_DEF[jr.ci];
+      m = { k:'st', lage:'valj', namn:ch.namn, farg:ch.farg, redo:jr.redo, ipl:SPEL.lage!=='lobby' };
+    } else {
+      const h = hjaltar.find(p=>p.pad===id);
+      if(h) m = { k:'st', lage:'spel', namn:h.ch.namn, farg:h.ch.farg,
+        hp:Math.max(0,Math.round(h.hp)), maxhp:h.maxhp, dag:SPEL.dag, fas:SPEL.fas,
+        nere:h.nere>0, kraft:h.kraftCd<=0, bygg:h.byggPa, slut:SPEL.lage==='slut', seger:SPEL.seger };
+    }
+    skickaTill(id, m);
+  }
+}
+const qrSkylt = document.getElementById('qrSkylt');
+function lankUrl(){
+  const bas = location.hostname==='8bitcat.github.io' ? location.origin+location.pathname : PUBLIK_URL;
+  return bas + '?join=' + LANK.kod;
+}
+function uppdateraQR(){
+  if(!LANK.oppen) return;
+  qrSkylt.innerHTML = '<img width="150" height="150" alt="QR" src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&color=100c14&bgcolor=efe6d0&data='+encodeURIComponent(lankUrl())+'">'
+    + '<div style="font-size:12px;margin-top:5px">Skanna med mobilkameran</div>'
+    + '<div class="kod">'+LANK.kod.toUpperCase()+'</div>';
+}
+function qrSync(){
+  qrSkylt.style.display = (LANK.oppen && SPEL.lage==='lobby' && SIDLAGE!=='mobil') ? 'block' : 'none';
+}
+
+/* ---- mobilsidan ---- */
+function kopplaSpak(st, sand){
+  const yta = document.getElementById('spakYta');
+  const ring = document.getElementById('spakRing'), puck = document.getElementById('spakPuck');
+  const tips = document.getElementById('spakTips');
+  let pid = null, ox = 0, oy = 0;
+  const satt = (el,x,y,s)=>{ el.style.left = (x-s/2)+'px'; el.style.top = (y-s/2)+'px'; };
+  yta.addEventListener('pointerdown', e=>{
+    if(pid!==null) return;
+    pid = e.pointerId;
+    try{ yta.setPointerCapture(pid); }catch(err){}
+    const r = yta.getBoundingClientRect();
+    ox = e.clientX-r.left; oy = e.clientY-r.top;
+    tips.style.display = 'none';
+    ring.style.display = 'block'; puck.style.display = 'block';
+    satt(ring,ox,oy,128); satt(puck,ox,oy,60);
+  });
+  yta.addEventListener('pointermove', e=>{
+    if(e.pointerId!==pid) return;
+    const r = yta.getBoundingClientRect();
+    let dx = e.clientX-r.left-ox, dy = e.clientY-r.top-oy;
+    const d = Math.hypot(dx,dy), max = 58;
+    if(d>max){ dx = dx/d*max; dy = dy/d*max; }
+    satt(puck, ox+dx, oy+dy, 60);
+    const gx = st.x;
+    st.x = Math.abs(dx/max)<0.24? 0 : dx/max;
+    st.y = Math.abs(dy/max)<0.24? 0 : dy/max;
+    if(st.x!==0 && gx===0) st.xT = st.x>0?1:-1;
+    sand();
+  });
+  const slapp = e=>{
+    if(e.pointerId!==pid) return;
+    pid = null; st.x = 0; st.y = 0;
+    ring.style.display = 'none'; puck.style.display = 'none';
+    sand();
+  };
+  yta.addEventListener('pointerup', slapp);
+  yta.addEventListener('pointercancel', slapp);
+  const knyt = (elId, nyckel)=>{
+    const el = document.getElementById(elId);
+    el.addEventListener('pointerdown', e=>{ e.preventDefault(); st[nyckel] = true; st[nyckel+'T'] = true; el.classList.add('tryckt'); sand(); vackLjud(); });
+    const av = ()=>{ st[nyckel] = false; el.classList.remove('tryckt'); sand(); };
+    el.addEventListener('pointerup', av);
+    el.addEventListener('pointercancel', av);
+    el.addEventListener('pointerleave', av);
+  };
+  knyt('knA','a'); knyt('knB','b'); knyt('knC','c');
+  document.addEventListener('touchmove', e=>e.preventDefault(), {passive:false});
+  document.addEventListener('gesturestart', e=>e.preventDefault());
+}
+// lokal pekkontroll ovanpå värdskärmen (spela solo på surfplatta)
+let LOKALPAD = false;
+function aktiveraLokalPad(){
+  if(LOKALPAD || PADSTART) return;
+  LOKALPAD = true;
+  const padUI = document.getElementById('padUI');
+  padUI.classList.add('pahost');
+  padUI.style.display = 'flex';
+  kopplaSpak(PEKPAD, ()=>{});
+}
+let PADSTART = false;   // egen flagga — INTE SIDLAGE-koll (vid ?join= är läget redan 'mobil')
+function anslutLank(kod){
+  if(PADSTART) return;
+  PADSTART = true;
+  SIDLAGE = 'mobil';
+  document.getElementById('stage').style.display = 'none';
+  document.getElementById('valUI').style.display = 'none';
+  const padUI = document.getElementById('padUI');
+  padUI.style.display = 'flex';
+  const info = document.getElementById('padInfo');
+  const st = {x:0,y:0,a:false,b:false,c:false};
+  let kanal = null, koppl = false;
+  const sand = ()=>{
+    if(koppl){ try{ kanal.send({k:'in', x:Math.round(st.x*100)/100, y:Math.round(st.y*100)/100, a:st.a, b:st.b, c:st.c}); }catch(e){} }
+  };
+  setInterval(sand, 100);
+  info.textContent = 'Ansluter till by '+kod.toUpperCase()+'…';
+  const peer = new Peer(ISKONF);
+  let forsok = 0;
+  peer.on('disconnected', ()=>{ try{ peer.reconnect(); }catch(e){} });
+  const koppla = ()=>{
+    forsok++;
+    kanal = peer.connect('trollnatt-'+kod.toLowerCase(), { reliable:true });
+    kanal.on('open', ()=>{ koppl = true; forsok = 0;
+      info.innerHTML = '<b style="color:#a8e08a">Ansluten!</b> Tryck YXA för att kliva in i byn.'; });
+    kanal.on('data', d=>{
+      if(!d || d.k!=='st') return;
+      if(d.lage==='lobby') info.innerHTML = 'Ansluten till <b>'+kod.toUpperCase()+'</b> — tryck YXA för att gå med!';
+      else if(d.lage==='valj')
+        info.innerHTML = '<span style="color:'+d.farg+'">&#9632; '+d.namn+'</span>'
+          + (d.ipl ? ' — YXA = hoppa in i byn!'
+             : (d.redo ? ' — <b style="color:#a8e08a">REDO!</b> (BYGG = ångra)' : ' — styr &#8592;&#8594; och välj, YXA = redo'));
+      else if(d.slut) info.innerHTML = '<b style="color:#ff7a6a">Byn föll…</b> Tryck YXA för nytt försök!';
+      else {
+        const block = 10, fyllda = d.maxhp? Math.max(0, Math.round(d.hp/d.maxhp*block)) : 0;
+        const stapel = '<span style="color:#a8e08a">'+'&#9608;'.repeat(fyllda)+'</span><span style="color:#3a2f4c">'+'&#9608;'.repeat(block-fyllda)+'</span>';
+        info.innerHTML = '<span style="color:'+d.farg+'">&#9632; '+d.namn+'</span> '+stapel+' '
+          + (d.nere ? '<b style="color:#ff7a6a">NERE! En vän kan hjälpa dig upp.</b>'
+             : d.seger ? '<b style="color:#ffd97a">SEGER! Bygg vidare!</b>'
+             : d.bygg ? '<b style="color:#a8e08a">BYGGLÄGE</b> — BYGG bläddrar, YXA placerar'
+             : (d.fas==='natt' ? '<b style="color:#8fd4ff">NATT '+d.dag+'</b> — försvara byn!'
+                : 'Dag '+d.dag+(d.kraft? ' — <b style="color:#8fd4ff">KRAFT redo!</b>':'')));
+      }
+    });
+    kanal.on('close', ()=>{
+      if(koppl){ koppl = false; info.innerHTML = '<b style="color:#ff7a6a">Tappade kontakten.</b> Försöker igen…'; setTimeout(koppla, 2000); }
+    });
+    kanal.on('error', ()=>{});
+  };
+  const omigen = ()=>{
+    if(koppl) return;
+    if(forsok < 6){
+      info.innerHTML = 'Hittar inte byn <b>'+kod.toUpperCase()+'</b> — försöker igen ('+forsok+'/5)…';
+      setTimeout(koppla, 2500);
+    } else {
+      info.innerHTML = '<b style="color:#ff7a6a">Kunde inte ansluta.</b> Kolla koden och att spelet är igång på stora skärmen — ladda sedan om.';
+    }
+  };
+  peer.on('open', koppla);
+  peer.on('error', fel=>{
+    if(fel && fel.type==='peer-unavailable') omigen();
+    else if(!koppl && forsok>0 && fel && fel.type!=='disconnected') omigen();
+  });
+  kopplaSpak(st, sand);
+}
+
+/* ---- lobby ---- */
+function nyVantare(pad){
+  if(vantar.some(j=>j.pad===pad) || hjaltar.some(h=>h.pad===pad)) return null;
+  const jr = { pad, ci: vantar.length%HJALTAR_DEF.length, redo:false, px:0, farsk:true };
+  vantar.push(jr); spela('valj');
+  return jr;
+}
+function skannaNyaPads(){
+  for(const id of padIdn()) nyVantare(id);
+  if(TLATCH.a && !vantar.some(j=>j.pad==='kb') && !hjaltar.some(h=>h.pad==='kb')){
+    TLATCH.a = false; nyVantare('kb');
+  }
+  if(LOKALPAD && PEKPAD.aT && !vantar.some(j=>j.pad==='lokal') && !hjaltar.some(h=>h.pad==='lokal')){
+    PEKPAD.aT = false; nyVantare('lokal');
+  }
+  for(const gp of gpCache) if(gp.aT && !vantar.some(j=>j.pad===gp.id) && !hjaltar.some(h=>h.pad===gp.id)) nyVantare(gp.id);
+  vantar = vantar.filter(j=> j.pad[0]!=='n' || (LANK.pads[j.pad] && LANK.pads[j.pad].vid));
+}
+function uppdVantare(jr, ipl){
+  const inp = lasInput(jr.pad);
+  let steg = 0;
+  if(inp.xT) steg = inp.xT;
+  else { if(inp.x>0.5 && jr.px<=0.5) steg = 1; if(inp.x<-0.5 && jr.px>=-0.5) steg = -1; }
+  jr.px = inp.x;
+  if(!jr.redo && steg){ jr.ci = (jr.ci+steg+HJALTAR_DEF.length)%HJALTAR_DEF.length; spela('valj'); }
+  if(inp.aT){
+    if(ipl){
+      const h = gorHjalte(jr.ci, jr.pad, hjaltar.length);
+      hjaltar.push(h);
+      vantar = vantar.filter(q=>q!==jr);
+      svavText(h.x, h.y-34, h.ch.namn+' KLIVER IN!', h.ch.farg, true);
+      spela('redo');
+      return;
+    }
+    jr.redo = !jr.redo; spela('redo');
+  }
+  if(inp.bT && !ipl) jr.redo = false;
+}
+function uppdLobby(dt){
+  tid += dt;
+  sattLat('lobby');
+  skannaNyaPads();
+  for(const jr of vantar){
+    if(jr.farsk){ jr.farsk = false; continue; }
+    uppdVantare(jr, false);
+  }
+  if(vantar.length>0 && vantar.every(j=>j.redo)){
+    if(SPEL.startT<0) SPEL.startT = 3.2;
+    SPEL.startT -= dt;
+    if(SPEL.startT<=0){
+      hjaltar = vantar.map((j,i)=>gorHjalte(j.ci, j.pad, i));
+      vantar = []; SPEL.startT = -1;
+      spela('fanfar');
+      startSpel();
+    }
+  } else SPEL.startT = -1;
+}
+
+/* ---- bildrutan ---- */
+let forraT = performance.now();
+function bildruta(nu){
+  const dt = Math.min(0.05, (nu-forraT)/1000);
+  forraT = nu;
+  // en enskild trasig bildruta får aldrig döda spelet
+  try{
+    gpCache = pollGamepads();
+    if(SPEL.lage==='lobby') uppdLobby(dt);
+    else {
+      uppdSpel(dt);
+      // nya spelare kan hoppa in mitt i spelet
+      skannaNyaPads();
+      for(const jr of vantar){ if(jr.farsk){ jr.farsk = false; continue; } uppdVantare(jr, true); }
+    }
+    musikPuls();
+    skickaStatus();
+  }catch(e){ console.error('uppd:', e); }
+  try{ ritaAllt(); qrSync(); }catch(e){ console.error('rita:', e); }
+  requestAnimationFrame(bildruta);
+}
+
+/* ---- felsökningskrokar (används av våra Playwright-tester) ---- */
+window.TN = {
+  status: ()=>({ lage:SPEL.lage, dag:SPEL.dag, fas:SPEL.fas, tidKvar:Math.round(SPEL.tidKvar||0),
+    res:{...RES}, smide:{...SMIDE}, vantar:vantar.length,
+    hjaltar:hjaltar.map(h=>({id:h.ch.id, x:Math.round(h.x), y:Math.round(h.y), hp:Math.round(h.hp), nere:h.nere>0, byggPa:h.byggPa})),
+    folk:folket.length, mobbar:mobbar.length, byggnader:byggnader.filter(b=>b).length,
+    ko:SPEL.natt && SPEL.natt.ko? SPEL.natt.ko.length : 0 }),
+  ge: o=>Object.assign(RES, o),
+  start: cis=>{ hjaltar = (cis||[0]).map((ci,i)=>gorHjalte(ci,'dbg'+i,i)); vantar = []; startSpel(); },
+  natt: ()=>{ SPEL.tidKvar = 0.01; },
+  gryning: ()=>{ if(SPEL.natt.ko) SPEL.natt.ko = []; startGryning(); },
+  dag: ()=>{ mobbar = []; if(SPEL.natt.ko) SPEL.natt.ko = []; startDag(SPEL.dag+1); },
+  sattDag: n=>{ SPEL.dag = n; },
+  bygg: (typ,tx,ty)=>placeraBygg(typ,tx,ty,true),
+  spawn: (slag,n)=>{ for(let i=0;i<(n||1);i++){ const [x,y] = kantPos('N'); gorMob(slag||'vatte', x, y); } },
+  boss: ()=>gorMob('kung', PXW/2, 4*TS),
+  doda: ()=>{ for(const m of [...mobbar]) dodaMob(m, true); },
+  folkNu: n=>{ for(let i=0;i<(n||1);i++) foddFolk(); },
+  folkInfo: ()=>folket.map(f=>({x:Math.round(f.x), y:Math.round(f.y), jobb:f.jobb, fas:f.fas,
+    barN:f.barN, mal:f.mal, rutt:f.rutt? f.rutt.length : null, vantaT:Math.round(f.vantaT*10)/10, gomd:f.gomd})),
+  lank: LANK, spel: SPEL,
+};
+
+/* ---- uppstart ---- */
+if(SIDLAGE==='mobil'){
+  anslutLank(URLQ.get('join'));
+} else if(SIDLAGE==='val'){
+  const valUI = document.getElementById('valUI');
+  valUI.style.display = 'flex';
+  // pointerup + click med dubbeltrycksskydd — iOS kan svälja rena click-händelser
+  const peka = (el, fn)=>{
+    let sen = 0;
+    const h = e=>{ const nu = performance.now(); if(nu-sen<400) return; sen = nu; fn(e); };
+    el.addEventListener('pointerup', h);
+    el.addEventListener('click', h);
+  };
+  peka(document.getElementById('valAnslut'), ()=>{
+    document.getElementById('valAnslut').style.display = 'none';
+    document.getElementById('kodDel').style.display = 'flex';
+    document.getElementById('kodFalt').focus();
+  });
+  const kor = ()=>{
+    const kod = document.getElementById('kodFalt').value.trim();
+    if(kod.length===4) anslutLank(kod);
+  };
+  peka(document.getElementById('kodGo'), kor);
+  document.getElementById('kodFalt').addEventListener('keydown', e=>{ if(e.key==='Enter') kor(); });
+  let vardStartad = false;
+  peka(document.getElementById('valHost'), ()=>{
+    if(vardStartad) return; vardStartad = true;
+    valUI.style.display = 'none';
+    startVard();
+    if(ARPEK) aktiveraLokalPad();
+    forraT = performance.now();
+    requestAnimationFrame(bildruta);
+  });
+} else {
+  startVard();
+  if(ARPEK && Math.min(window.innerWidth, window.innerHeight) < 900) aktiveraLokalPad();
+  requestAnimationFrame(bildruta);
+}
+</script>
+</body></html>
